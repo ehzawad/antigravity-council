@@ -36,10 +36,17 @@ def seconds(duration: str) -> int:
     return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
 
 
-def argv_for(binary: str, role: dict, config: dict, sid: str | None) -> list[str]:
+INTERNAL_RUN_FILES = {"launch.json", "launch-plan.json", "model-snapshot.json", "supervisor.lock",
+                      "supervisor.json", "state.json", "events.ndjson", "err.log", "report.json",
+                      "report.md", "supervisor-error.txt", "logs", "replies"}
+
+
+def argv_for(binary: str, role: dict, config: dict, sid: str | None, run_dir: Path | None = None) -> list[str]:
     args = [binary, "--input-format", "stream-json", "--output-format", "stream-json",
             "--model", role["model"], "--agent", profile_name(role["access"]),
             "--print-timeout", config["print_timeout"]]
+    if run_dir is not None:
+        args += ["--add-dir", str(run_dir)]
     # Do not use -p with --input-format stream-json. Prompts belong on stdin.
     if sid:
         if not SESSION_RE.fullmatch(sid):
@@ -54,13 +61,40 @@ def argv_for(binary: str, role: dict, config: dict, sid: str | None) -> list[str
     return args
 
 
-def prompt_for(role: dict, context: str) -> str:
+def staged_files(run_dir: Path | None) -> list[str]:
+    if run_dir is None or not run_dir.is_dir():
+        return []
+    return sorted(p.name for p in run_dir.iterdir() if p.name not in INTERNAL_RUN_FILES)
+
+
+def prompt_for(role: dict, context: str, *, cwd: Path | None = None,
+               run_dir: Path | None = None, retry_note: str = "") -> str:
     access = {
         "read": "Read-only investigation. No file writes, shell execution, browser actuation, or MCP calls.",
         "write": "You are the sole authorized local file writer for this phase. Shell execution is unavailable.",
         "execute": "You are the sole authorized local writer/executor. Use only the granted workspace and tool permissions.",
     }[role["access"]]
     lens = "\n".join(role["instruction"])
+    paths_block = ""
+    if cwd is not None or run_dir is not None:
+        staged = ", ".join(staged_files(run_dir)) or "context.md, roles.json"
+        paths_block = (
+            f"\nAUTHORIZED DIRECTORIES\n"
+            f"- Workspace root (cwd): {cwd}\n"
+            f"- Run directory (staged files, added via --add-dir): {run_dir}\n"
+            f"- Staged files in run directory: {staged}\n"
+            f"IMPORTANT: When instructions mention 'this run directory' or staged patch/spec files, read them "
+            f"from {run_dir}. Only read, list, or search paths inside the Workspace root or Run directory "
+            f"above. Never read or list paths outside those two directories (such as /tmp, /private/tmp, /var, "
+            f"parent directories, or ~/.claude), because headless mode auto-denies outside paths and immediately "
+            f"aborts your turn with empty output.\n"
+        )
+    if retry_note:
+        paths_block += (
+            f"\nRETRY NOTICE: Your previous attempt was terminated by a headless permission denial ({retry_note}). "
+            f"Do NOT access that path or any path outside the Workspace root and Run directory; complete the "
+            f"deliverable using only allowed paths.\n"
+        )
     return f"""You are a task-specific worker in a Claude Code orchestrated Antigravity Council.
 Role: {role['label']} ({role['id']})
 {access}
@@ -74,7 +108,7 @@ run; mark unresolved decisions as unknowns. A blocked check is a coverage gap.
 Finish with findings, exact evidence (paths/lines or commands and observed results),
 changed files, checks actually run, risks, and unknowns. Say 'nothing material' when
 appropriate. The host reconciles evidence, never votes. Thoroughness beats speed.
-
+{paths_block}
 ROLE INSTRUCTION
 {lens}
 
@@ -115,13 +149,14 @@ async def terminate(proc: asyncio.subprocess.Process) -> None:
 
 
 async def run_attempt(binary: str, role: dict, context: str, config: dict, sid: str | None,
-                      log_dir: Path, attempt_number: int, update: Callable) -> Attempt:
+                      log_dir: Path, attempt_number: int, update: Callable,
+                      run_dir: Path | None = None, retry_note: str = "") -> Attempt:
     stream = Stream(role)
     out = Attempt(stream)
-    # Encoding and config validation happen before spawning a child.
-    payload = user_message(prompt_for(role, context))
-    command = argv_for(binary, role, config, sid)
     root = Path(config["cwd"])
+    # Encoding and config validation happen before spawning a child.
+    payload = user_message(prompt_for(role, context, cwd=root, run_dir=run_dir, retry_note=retry_note))
+    command = argv_for(binary, role, config, sid, run_dir)
     provider_check()
     check_profiles(root, [role])
     stdout_file = log_dir / f"{role['id']}.{attempt_number}.stdout.ndjson"
@@ -168,10 +203,11 @@ async def run_attempt(binary: str, role: dict, context: str, config: dict, sid: 
                 await proc.stdin.wait_closed()
 
     try:
-        update(role["id"], phase="running", process=identity, attempt=attempt_number)
         helpers = [asyncio.create_task(pump(proc.stdout, stdout_file, True)),
                    asyncio.create_task(pump(proc.stderr, stderr_file, False)),
                    asyncio.create_task(feed())]
+        await asyncio.sleep(0)
+        update(role["id"], phase="running", process=identity, attempt=attempt_number)
         while proc.returncode is None:
             for task in helpers:
                 if task.done() and not task.cancelled() and task.exception():
@@ -258,9 +294,11 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
         async with semaphore:
             attempt = None
             count = 0
+            retry_note = ""
             while True:
                 count += 1
-                attempt = await run_attempt(binary, role, context, config, sid, run_dir / "logs", count, update)
+                attempt = await run_attempt(binary, role, context, config, sid, run_dir / "logs",
+                                            count, update, run_dir=run_dir, retry_note=retry_note)
                 stream = attempt.stream
                 if attempt.warning:
                     warnings.append(attempt.warning)
@@ -275,6 +313,15 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
                 if count < 2 and retry_safe and attempt.failure_class == "transient":
                     update(role["id"], phase="retry-wait")
                     await asyncio.sleep(2)
+                    continue
+                # If a read-only worker wandered into an outside/forbidden path and
+                # headless jetski killed the turn with an empty terminal response,
+                # retry once fresh with an explicit path-denial note.
+                if (count < 2 and role["access"] == "read" and attempt.failure_class == "permission"
+                        and attempt.error == "empty terminal response"):
+                    sid = None
+                    retry_note = "; ".join(stream.tool_errors) or "outside-workspace read_file auto-denied"
+                    warnings.append("headless permission abort on read role; retried once with explicit path boundary")
                     continue
                 break
             result = attempt.stream.result or {}

@@ -22,7 +22,7 @@ if args == ["--version"]:
     print("fake-agy 1.2.11 (test fixture, not a vendor version assertion)")
     raise SystemExit(0)
 if args == ["--help"]:
-    flags = "--input-format --output-format --model --agent --conversation --print-timeout --mode --sandbox --dangerously-skip-permissions"
+    flags = "--input-format --output-format --model --agent --add-dir --conversation --print-timeout --mode --sandbox --dangerously-skip-permissions"
     if os.environ.get("FAKE_AGY_MISSING_FLAG"):
         flags = flags.replace(os.environ["FAKE_AGY_MISSING_FLAG"], "")
     # Real agy (Go flag package) writes usage to stderr with exit 0.
@@ -102,6 +102,17 @@ if scenario == "sleep":
 if scenario == "malformed":
     print('{"bad":', flush=True)
     time.sleep(90)
+if scenario == "permission-abort-once":
+    if "RETRY NOTICE:" not in prompt:
+        emit({"event": "step_update", "step_update": {"conversation_id": sid, "step_type": "unknown", "state": "DONE"}})
+        emit({"event": "step_update", "step_update": {
+            "conversation_id": sid, "step_type": "tool", "state": "DONE", "tool_name": "list_dir",
+            "tool_info": {"error": {"type": "TOOL_ERROR", "message": "permission check failed for read_file \"/private/tmp\""}},
+        }})
+        print('jetski: no output produced — a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.',
+              file=sys.stderr, flush=True)
+        terminal("SUCCESS", "")
+        raise SystemExit(0)
 if scenario in {"tool-transient", "tool-error"}:
     payload = {"conversation_id": sid, "step_type": "tool", "state": "DONE", "tool_name": "view_file"}
     if scenario == "tool-error":

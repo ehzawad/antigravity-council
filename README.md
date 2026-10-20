@@ -1,10 +1,13 @@
-# Antigravity Council
+# Antigravity Council (Beta — Incomplete)
+
+> [!WARNING]
+> **Status: Experimental Beta / Incomplete.** This plugin is a work-in-progress beta and is **not production-ready**. Real-world `agy` headless execution (`--input-format stream-json`) has sharp edges around workspace path permissions, headless auto-denials that abort turns with empty output, and custom-agent tool registries that are still being hardened. Use at your own risk.
 
 A Claude Code plugin that commissions independent **Antigravity CLI workers**, with first-class preferences for **Gemini 4 Argon** and **Claude Opus 5.5**. Claude remains the host: it understands the request, creates task-specific roles, selects each worker's model from current CLI metadata, checks the resulting evidence, and returns one answer.
 
 Inspired by [ehzawad/codex-council](https://github.com/ehzawad/codex-council) and [ehzawad/cursor-cult](https://github.com/ehzawad/cursor-cult). This is a new implementation of their orchestration pattern, not a renamed Codex subprocess adapter. It uses Antigravity's own streaming input/output and custom-agent contracts.
 
-**Release:** 0.1.0. **Documentation baseline:** October 20, 2026. **Validation:** offline unit and real-subprocess tests against a fake CLI; real authenticated Antigravity and Claude plugin loading have not been exercised here. See [VALIDATION.md](docs/VALIDATION.md).
+**Release:** 0.1.0-beta (incomplete). **Documentation baseline:** October 20, 2026. See [VALIDATION.md](docs/VALIDATION.md).
 
 ## Install
 

@@ -54,7 +54,7 @@ Read `references/model-selection.md` when resolving a variant or availability fa
 
 ## 4. Stage context and roles
 
-Write the full `context.md` and `roles.json` using the host's file-writing tool. The run directory is already private. Do not move staged files into the workspace or relax its permissions.
+Write the full `context.md` and `roles.json` using the host's file-writing tool. The run directory is already private and is automatically granted to every worker via `--add-dir` and advertised in the worker prompt. You may stage additional reference files (such as `.patch` diffs or spec files) inside `run_dir` and reference them by filename or absolute `run_dir` path. Never instruct workers to read paths outside `cwd` and `run_dir` (such as `/tmp`, external worktrees, or `~/.claude`), because `agy` headless mode auto-denies outside paths and aborts the turn. Do not move staged files into the workspace or relax its permissions.
 
 The capsule headings are strict, ordered, and nonempty:
 

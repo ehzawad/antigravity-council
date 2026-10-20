@@ -441,6 +441,20 @@ class IntegrationTests(Isolated):
         self.assertEqual(out.returncode, 0)
         self.assertTrue(life.collect(run)["results"][0]["warnings"])
 
+    def test_permission_abort_on_read_retries_once_with_boundary_note(self):
+        run = self.prepare()
+        (run / "diff-ui.patch").write_text("diff\n")
+        record = self.home / "calls.ndjson"
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "permission-abort-once", "FAKE_AGY_RECORD": str(record)}):
+            out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        result = life.collect(run)["results"][0]
+        self.assertEqual(result["attempts"], 2)
+        self.assertIn("headless permission abort", " ".join(result["warnings"]))
+        calls = [json.loads(line) for line in record.read_text().splitlines() if "--input-format" in line]
+        self.assertIn("--add-dir", calls[0]["args"])
+        self.assertIn(str(run), calls[0]["args"])
+
     def test_stall_kills_worker(self):
         run = self.prepare(stall_seconds=0.2)
         with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "sleep"}): out = self.cli("run", run)

@@ -86,7 +86,7 @@ class Stream:
                 self.unsafe_to_replay = True
                 raise CouncilError("invalid step_update payload")
             st = step.get("step_type")
-            if st not in {"user_input", "agent_response", "checkpoint"}:
+            if st not in {"user_input", "agent_response", "checkpoint", "unknown"}:
                 self.unsafe_to_replay = True
             if st == "tool":
                 name = step.get("tool_name")

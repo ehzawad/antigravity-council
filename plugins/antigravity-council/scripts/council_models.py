@@ -9,7 +9,7 @@ import subprocess
 
 from council_common import CouncilError, MODEL_RE, digest, now, read_json, write_json
 
-REQUIRED_FLAGS = {"--input-format", "--output-format", "--model", "--agent", "--conversation", "--print-timeout"}
+REQUIRED_FLAGS = {"--input-format", "--output-format", "--model", "--agent", "--add-dir", "--conversation", "--print-timeout"}
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 # Preferences, not a fabricated catalog: membership in agy models is mandatory.
 PREFERENCES = {
