@@ -1,0 +1,7 @@
+Antigravity Council is an independent plugin, not an official Google, Anthropic,
+or OpenAI product. Product and model names belong to their respective owners.
+
+Architecture inspiration: ehzawad/codex-council and ehzawad/cursor-cult.
+This package contains a new implementation written for the requested Antigravity
+workflow. It does not redistribute vendor CLI binaries, models, fonts, credentials,
+or an SDK. Official documentation sources are recorded in docs/SOURCES.md.

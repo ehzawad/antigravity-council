@@ -1,0 +1,17 @@
+{
+  "name": "antigravity-council",
+  "owner": {
+    "name": "ehzawad"
+  },
+  "metadata": {
+    "description": "Host-driven Antigravity CLI councils for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "antigravity-council",
+      "source": "./plugins/antigravity-council",
+      "description": "Dynamic independent Argon and Opus workers, supervised and reconciled by Claude."
+    }
+  ]
+}

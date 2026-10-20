@@ -1,0 +1,13 @@
+[
+  {
+    "id": "authorized-local-patch",
+    "label": "Authorized local patch",
+    "instruction": [
+      "Implement only the explicitly authorized local change. Preserve unrelated edits.",
+      "Do not run shell commands, commit, publish, or change remote services. Report edited paths and verification gaps."
+    ],
+    "model": "gemini-4-argon-high",
+    "access": "write",
+    "selection_reason": "Illustrative authorized writer; verify exact ID in discovery."
+  }
+]
