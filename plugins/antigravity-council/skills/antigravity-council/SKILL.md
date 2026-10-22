@@ -21,8 +21,6 @@ Treat `$ARGUMENTS` as the operative invocation and retain the user's later corre
 
 This skill pre-approves only the runner commands exactly as written below, and only for the turn that invokes it (Claude Code clears the grant at the next user message). Before a later `status`, `follow`, `collect`, or `cancel`, invoke this skill again. Writing `context.md` and `roles.json` into the private run directory (outside the project, under `~/.local/state/antigravity-council`) needs Write permission that this skill does not grant. In a `dontAsk` or unattended session, the user's settings must allow that Write and the runner command pattern; otherwise report the denial instead of skipping steps. Always use the `python3 "${CLAUDE_PLUGIN_ROOT}/..."` form, not the absolute paths the runner prints, so the pre-approval matches.
 
-For a self-contained read-only council that also verifies each worker claim with an independent Claude agent, the plugin ships the dynamic workflow `/antigravity-council:council`; pass the verbatim request as its args. It never launches writer or executor roles.
-
 ## 1. Read the task and choose ownership
 
 Inspect the request, conversation, relevant code, diff, failures, and acceptance criteria. Preserve unrelated uncommitted work. Determine what is actually unknown and what result would settle it. Do not assign standard personas merely to fill a panel. One role is often enough; each additional role must add a distinct lens or an expressly requested independent check.
@@ -156,6 +154,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/antigravity_council.py" --skill-contract 
 
 A final collect requires supervisor termination. `collect --partial` is only a recovery/inspection aid. Exit 0 means every role returned usable transport output; exit 3 means partial output; neither verifies the user's objective.
 
-Read the actual workspace and reports. Reconcile each consequential claim as supported, contradicted, or unverified, with the evidence that decides it. Do not count votes. Preserve useful dissent. A clean result, confident prose, or tool denial is not a passed test. Reports identify model sent and CLI model reported, not independently audited server execution.
+Read the actual workspace and reports. When a consequential worker claim can't be settled by a quick look and getting it wrong would change the answer, have an independent check try to refute it against the live workspace: a read-only subagent briefed only with the claim and its cited evidence, or a parallel fan-out of such checks when there are several. Do not hand it your conclusion. Reconcile each consequential claim as supported, contradicted, or unverified, with the evidence that decides it. Do not count votes. Preserve useful dissent. A clean result, confident prose, or tool denial is not a passed test. Reports identify model sent and CLI model reported, not independently audited server execution.
 
 For a justified next round, keep the capsule and task key, prepare a new directory, update the phase brief, and synthesize roles from the remaining uncertainties. Verify changes in a fresh, settled-state phase. Finish with the answer, actual checks, material limitations, and any unresolved blockers. Do not silently broaden the task.

@@ -1,11 +1,11 @@
-# Release validation: 0.2.0
+# Release validation: 0.2.1
 
-Executed on **October 22, 2026** on macOS (Darwin 27.0) with Python 3.15, `agy` 1.4.4, and Claude Code 2.1.307.
+Executed on **October 22, 2026** (0.2.0 live runs; 0.2.1 only removes the separate workflow command and folds its claim-verification step into the skill, re-checked offline and with a live installed-copy run) on macOS (Darwin 27.0) with Python 3.15, `agy` 1.4.4, and Claude Code 2.1.307.
 
 ## Offline checks
 
 ```text
-python3 scripts/verify.py                      ok (12 Python files, 3 profiles, 1 workflow)
+python3 scripts/verify.py                      ok (12 Python files, 3 profiles)
 python3 -m unittest discover -s tests          Ran 108 tests ... OK
 claude plugin validate ./plugins/antigravity-council   Validation passed
 claude plugin validate .                               Validation passed (marketplace)
@@ -27,13 +27,12 @@ All runs were read-only and used the real authenticated CLI on this machine.
 | `live_smoke.py`, Gemini-family catalog model pinned | passed: canary read, requested model equals `init.model`, workspace unchanged |
 | `live_smoke.py`, Claude-family catalog model pinned | passed (same checks) |
 | `live_smoke.py` with no `--model` (agy's default) | passed. `init.model` was absent, as the headless docs say it is when not overridden |
-| `/antigravity-council:council` workflow, run end to end on this repo | complete: 9 Claude agents. Both `agy` workers (two families) returned usable replies, each requested model matched `init.model`, and there were no warnings. Each consequential claim was independently verified, then reconciled |
+| Full council with independent claim verification (0.2.0 workflow form), run end to end on this repo | complete: 9 Claude agents. Both `agy` workers (two families) returned usable replies, each requested model matched `init.model`, and there were no warnings. Each consequential claim was independently verified, then reconciled |
 
 Real streams confirmed the envelope keys (`event` + `init`/`step_update`/`result`), a top-level `conversation_id` on `init`, `init.tools` listing the full registry, `permission_mode: request-review`, and the `step_type` values `user_input`, `unknown`, `agent_response`, and `tool`. Every captured stream began with `init`.
 
-The workflow's verifiers raised findings that were fixed before release:
+Those verifiers raised findings that were fixed in 0.2.0:
 
-- An unpinned role broke the workflow's structured-output schema.
 - The read-only permission retry was an undocumented exception to the no-replay rule.
 - The test of the stream-json invocation was too narrow.
 

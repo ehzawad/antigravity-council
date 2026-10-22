@@ -28,9 +28,9 @@ Reviewed **October 22, 2026** against codex-council 1.3.3, cursor-cult 0.7.0, `a
 
 **Plugin monitors.** Cursor Cult ships an experimental plugin monitor (`monitors/monitors.json`). This plugin instead has the skill run `follow` under the host's Monitor tool, because plugin monitors are experimental and run only in interactive sessions.
 
-## The dynamic workflow
+## Claim verification
 
-Claude Code's dynamic workflows (`workflows/` in a plugin) let the orchestration itself be a script. `/antigravity-council:council` frames the capsule and read-only roles (one Claude agent), runs the `agy` fleet through the runner (one agent), sends each consequential worker claim to an independent Claude verifier told to refute it (up to six), and reconciles the evidence (one agent). Adding Claude-side verifiers is the reconciliation step Codex Council leaves to the host, made explicit. The workflow refuses writer or executor roles, so write authority stays single-owner and explicitly granted through the skill.
+Codex Council leaves claim checking entirely to the host. This plugin's skill makes it explicit: before reconciling, Claude sends consequential claims it can't settle quickly to independent read-only checks briefed only with the claim and its cited evidence, so they try to refute it rather than confirm the host's view. 0.2.0 shipped this as a separate dynamic-workflow command; 0.2.1 folds it into the single skill.
 
 ## Documentation versus local CLI
 

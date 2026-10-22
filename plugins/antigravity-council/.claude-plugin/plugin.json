@@ -1,8 +1,8 @@
 {
   "name": "antigravity-council",
   "displayName": "Antigravity Council",
-  "version": "0.2.0",
-  "description": "Claude-orchestrated Antigravity CLI (agy) councils on any model your live agy catalog advertises, with durable supervision, an optional verifying workflow, and evidence-based reconciliation.",
+  "version": "0.2.1",
+  "description": "Claude-orchestrated Antigravity CLI (agy) councils on any model your live agy catalog advertises, with durable supervision, independent claim verification, and evidence-based reconciliation.",
   "author": {
     "name": "ehzawad"
   },
@@ -15,7 +15,6 @@
     "council",
     "cross-model",
     "verification",
-    "workflow",
     "gemini"
   ]
 }

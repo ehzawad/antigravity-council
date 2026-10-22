@@ -10,7 +10,7 @@ Inspired by [ehzawad/codex-council](https://github.com/ehzawad/codex-council) an
 
 | Component | Supported |
 |---|---|
-| Claude Code | 2.1.x with plugin skills (workflows need dynamic workflows enabled) |
+| Claude Code | 2.1.x with plugin skills |
 | Antigravity CLI | `agy` 1.4.x, installed and signed in interactively once |
 | Python | 3.11 or later, standard library only, on macOS or Linux |
 
@@ -54,13 +54,7 @@ To develop from a checkout instead, use `claude --plugin-dir ./plugins/antigravi
 
 Or ask Claude to use Antigravity Council in ordinary language.
 
-For a self-contained read-only council, run the bundled dynamic workflow:
-
-```text
-/antigravity-council:council Why does the cache invalidation test fail intermittently? Get two independent model families on it.
-```
-
-The workflow frames an Intent Capsule and task-specific read-only roles, runs the `agy` fleet through the same runner, has one independent Claude verifier try to refute each consequential worker claim against the live workspace, and reconciles the evidence (no voting). It refuses writer or executor roles; use the skill for explicitly authorized implementation.
+There is one command. After the workers finish, Claude checks each consequential claim against the live workspace, sending hard ones to an independent read-only check that tries to refute them, then reconciles the evidence (no voting).
 
 The skill pre-approves its runner commands for the invoking turn only. Writing `context.md`/`roles.json` into the private run directory (under `~/.local/state/antigravity-council`) needs Write permission; in `dontAsk` or unattended sessions add allow rules for that directory and the runner command. The skill creates only roles justified by the task; a single role is a valid council. It does not launch extra workers just to use more models.
 
