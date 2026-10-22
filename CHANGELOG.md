@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-10-22)
+
+- One command: `/antigravity-council:antigravity-council`. The separate `/antigravity-council:council` dynamic workflow is removed, and its independent claim-verification step is now part of the skill's reconcile phase.
+
 ## 0.2.0 (2026-10-22)
 
 Reconciled with codex-council 1.3.3, cursor-cult 0.7.0, `agy` 1.4.4, and the current Claude Code plugin, skill, and workflow docs.

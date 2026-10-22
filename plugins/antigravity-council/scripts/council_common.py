@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from typing import Any, Iterator
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 CONTRACT = 1
 TERMINAL = {"succeeded", "partial", "failed", "cancelled"}
 ID_RE = re.compile(r"[a-z][a-z0-9_-]{0,79}\Z")

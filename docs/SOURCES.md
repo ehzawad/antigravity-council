@@ -19,7 +19,6 @@ Reviewed against official public documentation on **October 22, 2026**, with the
 | [Claude plugin manifest](https://code.claude.com/docs/en/plugins/manifest-reference) | Plugin manifest, conventional component directories, plugin-relative scripts |
 | [Claude marketplace creation](https://code.claude.com/docs/en/plugins/create-marketplace) | GitHub marketplace registration, plugin installation, version-pinned updates |
 | [Claude skills](https://code.claude.com/docs/en/skills) | Turn-scoped `allowed-tools` pre-approval of the runner command |
-| [Claude dynamic workflows](https://code.claude.com/docs/en/workflows) | Plugin `workflows/` distribution, `meta` literal, `agent`/`pipeline`/`phase`, `args` |
 
 Architecture references: [Codex Council](https://github.com/ehzawad/codex-council) and [Cursor Cult](https://github.com/ehzawad/cursor-cult). Their source was inspected through the connected GitHub account. The new plugin uses its own runtime modules and Antigravity protocol implementation; it does not assume the original projects' vendor flags transfer.
 

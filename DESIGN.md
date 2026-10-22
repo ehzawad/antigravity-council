@@ -13,7 +13,6 @@ The host owns meaning; the runtime owns execution. Claude reads the conversation
 | `council_protocol.py` | Antigravity stdin/event contract, terminal validation, diagnostic classification |
 | `council_runtime.py` | Per-role subprocesses, locks, continuation, retries, streams, and reply persistence |
 | `council_lifecycle.py` | Run creation, input binding, supervisor, durable status, follow/collect/cancel/reap |
-| `workflows/council.js` | Optional Claude Code dynamic workflow: frame, run the read-only fleet via the runner, verify claims, reconcile |
 
 No external service, database, API key manager, or Python dependency is required. Separate modules make vendor protocol changes reviewable without touching host role synthesis. A microservice deployment would add network and authentication surfaces without helping this local plugin's job.
 
