@@ -1,8 +1,20 @@
 # Changelog
 
-## Unreleased (2026-10-20, beta/incomplete — real CLI fixes against agy 1.4.3)
+## 0.2.0 (2026-10-22)
 
-> Note: This project is currently in **beta and incomplete**.
+Reconciled with codex-council 1.3.3, cursor-cult 0.7.0, `agy` 1.4.4, and the current Claude Code plugin, skill, and workflow docs.
+
+- Dynamic workflow `/antigravity-council:council`: read-only council framed by Claude, run through the existing runner, each consequential claim independently verified by a Claude agent, evidence reconciled without voting. Refuses writer/executor roles.
+- Skill pre-approves the runner command for the invoking turn (`allowed-tools`), documents permissions across turns, and follows with the host Monitor tool.
+- GitHub marketplace install and update (`claude plugin marketplace add ehzawad/antigravity-council`); manifest gains `displayName`, `homepage`, `repository`.
+- Model-agnostic: no model names or preference table in code, skill, workflow, docs, or manifest; discovery returns only the live `agy models` catalog (the `preferred` field is gone). A role pins an exact catalog ID or omits `model` to inherit agy's configured default; literal `inherit`/`default` is refused. `live_smoke.py --model` is optional.
+- New `docs/RECONCILIATION.md`; sources, validation, and README updated. The beta/incomplete banner is removed now that live read-only councils pass on two model families and on agy's default; the remaining live gates stay documented.
+- `verify.py` checks the workflow file, skill pre-approval, and marketplace version; CI adds macOS.
+- Fix: macOS `killpg` EPERM on an exited group leader no longer escapes best-effort cleanup (misclassified roles as `runtime` under load); `reap` treats it as already gone.
+- Read-only permission retry now documents its exception to the no-replay rule and warns when it drops a saved conversation.
+- Tests: stream-json invocation rejects `--print`/`--prompt` too; reap test no longer races worker startup.
+
+## Post-0.1.0 fixes (2026-10-20, against agy 1.4.3)
 
 Fixes found by running against the real authenticated CLI:
 

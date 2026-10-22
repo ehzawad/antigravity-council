@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-driven Argon/Opus council for Claude Code. No external Python dependencies."""
+"""Host-driven Antigravity CLI council for Claude Code. No external Python dependencies."""
 from __future__ import annotations
 
 import argparse
@@ -25,7 +25,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--skill-contract", type=int, default=CONTRACT)
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("setup", help="install capability profiles without altering settings or auth")
-    d = sub.add_parser("doctor", help="metadata-only local contract and preferred-model discovery")
+    d = sub.add_parser("doctor", help="metadata-only local contract and live model-catalog discovery")
     d.add_argument("--cwd", default=os.getcwd())
     prep = sub.add_parser("prepare", help="create a private durable run directory")
     prep.add_argument("--cwd", default=os.getcwd())

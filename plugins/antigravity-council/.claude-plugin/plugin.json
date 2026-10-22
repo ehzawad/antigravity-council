@@ -1,16 +1,21 @@
 {
   "name": "antigravity-council",
-  "version": "0.1.0",
-  "description": "Claude-orchestrated Antigravity CLI councils with runtime-discovered Argon and Opus models, durable supervision, and evidence-based reconciliation.",
+  "displayName": "Antigravity Council",
+  "version": "0.2.0",
+  "description": "Claude-orchestrated Antigravity CLI (agy) councils on any model your live agy catalog advertises, with durable supervision, an optional verifying workflow, and evidence-based reconciliation.",
   "author": {
     "name": "ehzawad"
   },
+  "homepage": "https://github.com/ehzawad/antigravity-council",
+  "repository": "https://github.com/ehzawad/antigravity-council",
   "license": "MIT",
   "keywords": [
     "antigravity",
-    "argon",
-    "opus",
+    "agy",
     "council",
-    "verification"
+    "cross-model",
+    "verification",
+    "workflow",
+    "gemini"
   ]
 }

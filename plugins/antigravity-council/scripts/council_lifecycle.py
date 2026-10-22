@@ -149,7 +149,7 @@ def check(run_dir: Path, *, refresh: bool = False) -> dict:
     check_intent(config, capsule)
     return {"ok": True, "version": VERSION, "run_dir": str(run_dir),
             "input_hash": input_hash(config, roles, context), "binary": snapshot["binary"],
-            "models": [{"role": r["id"], "model": r["model"], "access": r["access"]} for r in roles],
+            "models": [{"role": r["id"], "model": r.get("model"), "access": r["access"]} for r in roles],
             "writer": config["writer"], "unrestricted_shell": config["unrestricted_shell"],
             "entitlement_verified": False, "snapshot_id": snapshot["snapshot_id"]}
 
@@ -160,7 +160,7 @@ class Tracker:
         self.sequence = 0
         self.state = {"schema": 1, "run_id": run_dir.name, "version": VERSION, "status": "running",
                       "started_at": now(), "updated_at": now(), "roles": {
-                          r["id"]: {"phase": "queued", "model": r["model"], "access": r["access"], "process": None}
+                          r["id"]: {"phase": "queued", "model": r.get("model"), "access": r["access"], "process": None}
                           for r in roles}}
         self.publish()
 
@@ -477,10 +477,15 @@ def reap(run_dir: Path) -> dict:
         if not same_process(proc) or proc.get("pid") != proc.get("pgid"):
             unverified.append(rid)
             continue
-        os.killpg(proc["pgid"], signal.SIGTERM)
+        try:
+            os.killpg(proc["pgid"], signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            # Exited between the identity check and the signal.
+            unverified.append(rid)
+            continue
         time.sleep(0.2)
         if same_process(proc):
-            with contextlib.suppress(ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(proc["pgid"], signal.SIGKILL)
         reaped.append(rid)
     return {"reaped": reaped, "unverified_or_already_gone": unverified,

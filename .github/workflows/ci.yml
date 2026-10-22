@@ -1,13 +1,22 @@
 name: offline-tests
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    name: tests (${{ matrix.os }}, ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ['3.11', '3.12', '3.13']
+        include:
+          - os: macos-latest
+            python-version: '3.13'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

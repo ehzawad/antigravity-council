@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from typing import Any, Iterator
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 CONTRACT = 1
 TERMINAL = {"succeeded", "partial", "failed", "cancelled"}
 ID_RE = re.compile(r"[a-z][a-z0-9_-]{0,79}\Z")
@@ -180,13 +180,19 @@ def parse_roles(raw: Any) -> list[dict]:
         if not isinstance(entry, dict) or set(entry) - allowed:
             raise CouncilError("role has invalid or unknown fields")
         if not all(isinstance(entry.get(k), str) and entry[k].strip()
-                   for k in ("id", "label", "model", "selection_reason")):
-            raise CouncilError("each role needs id, label, model, and selection_reason")
+                   for k in ("id", "label", "selection_reason")):
+            raise CouncilError("each role needs id, label, and selection_reason")
         rid = entry["id"]
         if not ID_RE.fullmatch(rid) or rid in seen:
             raise CouncilError(f"invalid or duplicate role ID: {rid!r}")
-        if not MODEL_RE.fullmatch(entry["model"]):
-            raise CouncilError("model must be an exact safe execution slug")
+        # Omitting model inherits agy's own configured default; there is no
+        # literal inherit/default placeholder and no built-in model list.
+        if "model" in entry:
+            model = entry["model"]
+            if not isinstance(model, str) or not MODEL_RE.fullmatch(model):
+                raise CouncilError("model must be an exact safe execution slug, or omitted to inherit agy's default")
+            if model.lower() in {"inherit", "default"}:
+                raise CouncilError("inherit agy's default model by omitting model, not with a placeholder")
         if any(c in entry["label"] + entry["selection_reason"] for c in "\r\n\x00"):
             raise CouncilError("label and selection_reason must be single-line")
         instruction = entry.get("instruction")
