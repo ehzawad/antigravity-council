@@ -34,7 +34,23 @@ def verify() -> dict:
     assert skill.startswith('---\nname: antigravity-council\n')
     assert '${CLAUDE_PLUGIN_ROOT}/scripts/antigravity_council.py' in skill
     assert '--skill-contract 1' in skill
+    assert 'allowed-tools:\n  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/antigravity_council.py" *)' in skill
     assert not (PLUGIN / '.claude-plugin/skills').exists()
+    assert marketplace['metadata']['version'] == common.VERSION
+    for key in ('homepage', 'repository'):
+        assert manifest[key] == 'https://github.com/ehzawad/antigravity-council', key
+    workflows = sorted((PLUGIN / 'workflows').glob('*.js'))
+    assert [w.name for w in workflows] == ['council.js'], workflows
+    flow = workflows[0].read_text()
+    # Claude Code requires a pure-literal meta as the first statement.
+    assert flow.startswith("export const meta = {\n  name: 'council',\n"), 'workflow meta must lead the file'
+    assert 'import(' not in flow and 'Date.now(' not in flow and 'Math.random(' not in flow
+    assert "access !== 'read'" in flow, 'workflow must refuse non-read roles'
+    # Model-agnostic: catalogs change monthly, so shipped files name no vendor models.
+    named = re.compile(r'gemini-\d|claude-(?:opus|sonnet|haiku)|\bargon\b|\bopus\b', re.I)
+    shipped = [path for path in PLUGIN.rglob('*') if path.is_file() and path.suffix in {'.py', '.md', '.json', '.js'}]
+    offenders = [str(path.relative_to(ROOT)) for path in shipped if named.search(path.read_text())]
+    assert not offenders, 'hardcoded model names in shipped plugin files: ' + ', '.join(offenders)
     expected = {policy.profile_name(a) + '.md': policy.profile_text(a) for a in policy.TOOLS}
     actual = {p.name: p.read_text() for p in (PLUGIN / 'worker-profiles').glob('*.md')}
     assert actual == expected, 'worker profile mirrors are stale'
@@ -54,7 +70,7 @@ def verify() -> dict:
                 broken.append(f'{path.relative_to(ROOT)} -> {dest}')
     assert not broken, 'broken local document links: ' + ', '.join(broken)
     return {'ok': True, 'version': common.VERSION, 'python_files_compiled': len(compiled),
-            'capability_profiles': len(expected), 'marketplace_entries': 1,
+            'capability_profiles': len(expected), 'marketplace_entries': 1, 'workflows': 1,
             'external_python_dependencies': 0,
             'claude_vendor_validation': 'not run by this script',
             'live_model_execution': 'not run by this script'}

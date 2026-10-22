@@ -1,55 +1,68 @@
-# Antigravity Council (Beta — Incomplete)
+# Antigravity Council
 
-> [!WARNING]
-> **Status: Experimental Beta / Incomplete.** This plugin is a work-in-progress beta and is **not production-ready**. Real-world `agy` headless execution (`--input-format stream-json`) has sharp edges around workspace path permissions, headless auto-denials that abort turns with empty output, and custom-agent tool registries that are still being hardened. Use at your own risk.
+A Claude Code plugin that commissions independent **Antigravity CLI (`agy`) workers** on whatever models your `agy` catalog advertises today. There is no built-in model list: the catalog changes roughly monthly, so Claude reads it live at each run. Claude remains the host: it understands the request, creates task-specific roles, selects each worker's model from current CLI metadata (or leaves it to agy's default), checks the resulting evidence, and returns one answer.
 
-A Claude Code plugin that commissions independent **Antigravity CLI workers**, with first-class preferences for **Gemini 4 Argon** and **Claude Opus 5.5**. Claude remains the host: it understands the request, creates task-specific roles, selects each worker's model from current CLI metadata, checks the resulting evidence, and returns one answer.
+Inspired by [ehzawad/codex-council](https://github.com/ehzawad/codex-council) and [ehzawad/cursor-cult](https://github.com/ehzawad/cursor-cult). This is a new implementation of their orchestration pattern, not a renamed Codex subprocess adapter: `agy` has no `codex exec`-style scratch-copy execution model, so this plugin uses Antigravity's own streaming input/output, custom-agent capability profiles, and headless permission rules. See [RECONCILIATION.md](docs/RECONCILIATION.md).
 
-Inspired by [ehzawad/codex-council](https://github.com/ehzawad/codex-council) and [ehzawad/cursor-cult](https://github.com/ehzawad/cursor-cult). This is a new implementation of their orchestration pattern, not a renamed Codex subprocess adapter. It uses Antigravity's own streaming input/output and custom-agent contracts.
+**Release:** 0.2.0. **Documentation baseline:** October 22, 2026, against `agy` 1.4.4 and Claude Code 2.1.307. Live read-only councils pass on macOS against two different model families from the live catalog and on agy's default model; see [VALIDATION.md](docs/VALIDATION.md) for what was and was not verified.
 
-**Release:** 0.1.0-beta (incomplete). **Documentation baseline:** October 20, 2026. See [VALIDATION.md](docs/VALIDATION.md).
+## Requirements
 
-## Install
+| Component | Supported |
+|---|---|
+| Claude Code | 2.1.x with plugin skills (workflows need dynamic workflows enabled) |
+| Antigravity CLI | `agy` 1.4.x, installed and signed in interactively once |
+| Python | 3.11 or later, standard library only, on macOS or Linux |
 
-Requirements: macOS or Linux, Python **3.11+**, Claude Code, and an installed, authenticated official `agy`. No third-party Python packages are required. Follow Google's [installation and authentication documentation](https://antigravity.google/docs/install?tab=cli), then open `agy` interactively once to establish credentials. Model availability and quota belong to your Antigravity account.
+Model availability and quota belong to your Antigravity account and plan; `agy models` shows what yours can use. Follow Google's [installation and authentication documentation](https://antigravity.google/docs/install?tab=cli).
 
-After extracting the ZIP, from the directory containing `antigravity-council/`:
-
-```zsh
-python3 ./antigravity-council/plugins/antigravity-council/scripts/antigravity_council.py setup
-claude --plugin-dir "$PWD/antigravity-council/plugins/antigravity-council"
-```
-
-`setup` installs three deterministic, content-hash-named capability profiles in `~/.gemini/config/agents/`. It never changes Antigravity settings, browser credentials, API keys, or your project's files. Existing conflicting profiles are refused, not overwritten. These profiles describe **tool access**, not a permanent committee of personas.
-
-For persistent installation, run these commands from the same directory instead of using `--plugin-dir`:
+## Install and update
 
 ```zsh
-claude plugin marketplace add ./antigravity-council
+claude plugin marketplace add ehzawad/antigravity-council
 claude plugin install antigravity-council@antigravity-council
 ```
 
-Start a new Claude Code session after installation. Validate the package using your installed Claude CLI:
+Update to a newer release:
 
 ```zsh
-claude plugin validate ./antigravity-council/plugins/antigravity-council
+claude plugin marketplace update antigravity-council
+claude plugin update antigravity-council@antigravity-council
 ```
 
-Run metadata-only discovery from your actual project:
+Start a new Claude Code session after installing or updating. Then install the worker capability profiles once:
 
 ```zsh
-python3 /absolute/path/to/antigravity-council/plugins/antigravity-council/scripts/antigravity_council.py doctor --cwd "$PWD"
+python3 ~/.claude/plugins/cache/antigravity-council/antigravity-council/*/scripts/antigravity_council.py setup
 ```
 
-`doctor` reads CLI version, help, and `agy models`; it does **not** send an inference prompt and does not prove entitlement or remaining quota. There is no automatic billable installation test.
+`setup` installs three deterministic, content-hash-named capability profiles in `~/.gemini/config/agents/`. It never changes Antigravity settings, browser credentials, API keys, or your project's files. Existing conflicting profiles are refused, not overwritten. These profiles describe **tool access**, not a permanent committee of personas. The skill also runs `setup` when profiles are missing.
+
+Run metadata-only discovery from your actual project (no inference, no quota):
+
+```zsh
+python3 ~/.claude/plugins/cache/antigravity-council/antigravity-council/*/scripts/antigravity_council.py doctor --cwd "$PWD"
+```
+
+To develop from a checkout instead, use `claude --plugin-dir ./plugins/antigravity-council` and validate with `claude plugin validate ./plugins/antigravity-council`.
 
 ## Invoke
 
 ```text
-/antigravity-council:antigravity-council use Argon and Opus 5.5 to independently investigate this regression. Preserve uncommitted work; do not edit. Reconcile the evidence rather than voting.
+/antigravity-council:antigravity-council use two different model families to independently investigate this regression. Preserve uncommitted work; do not edit. Reconcile the evidence rather than voting.
 ```
 
-Or ask Claude to use Antigravity Council in ordinary language. The skill creates only roles justified by the task; a single role is a valid council. It does not automatically launch two workers just because two model families are preferred.
+Or ask Claude to use Antigravity Council in ordinary language.
+
+For a self-contained read-only council, run the bundled dynamic workflow:
+
+```text
+/antigravity-council:council Why does the cache invalidation test fail intermittently? Get two independent model families on it.
+```
+
+The workflow frames an Intent Capsule and task-specific read-only roles, runs the `agy` fleet through the same runner, has one independent Claude verifier try to refute each consequential worker claim against the live workspace, and reconciles the evidence (no voting). It refuses writer or executor roles; use the skill for explicitly authorized implementation.
+
+The skill pre-approves its runner commands for the invoking turn only. Writing `context.md`/`roles.json` into the private run directory (under `~/.local/state/antigravity-council`) needs Write permission; in `dontAsk` or unattended sessions add allow rules for that directory and the runner command. The skill creates only roles justified by the task; a single role is a valid council. It does not launch extra workers just to use more models.
 
 A request authorizing implementation can appoint one local writer. A role that runs tests needs explicit `execute` access, because test commands can write caches, artifacts, or other files. Ordinary reviewers have no shell tool.
 
@@ -80,18 +93,14 @@ The Intent Capsule is hashed across rounds of a task. The mutable phase brief ca
 
 ## Model selection
 
-The preferred IDs are **candidates only**, usable when the installed `agy models` lists them:
+There is no hardcoded model list, preference table, or ranking. `discover` records the live `agy models` catalog for each run, and Claude chooses per role:
 
-| Family | Preferred candidates |
-|---|---|
-| Gemini 4 Argon | `gemini-4-argon-high`, `gemini-4-argon-medium` |
-| Claude Opus 5.5 | `claude-opus-5-5-high`, `claude-opus-5-5-medium`, `claude-opus-5-5-max`, `claude-opus-5-5-low` |
+- **Pinned:** an exact ID from that catalog. An explicit user choice wins and is never substituted; an ID the catalog does not list fails preflight.
+- **Inherited:** `model` omitted, so no `--model` is sent and agy uses its own configured default.
 
-Claude chooses the task-appropriate variant and records its reason. This release requires an explicit model on every role; it does not inherit an unknown default, silently downgrade, or substitute a model after rejection/quota exhaustion. Other explicitly requested models work when advertised by the local catalog.
+Claude records each choice's reason and does not infer capability from product names, version numbers, or catalog order. Selections are rechecked with fresh discovery at launch. For a pinned role, a mismatch with the CLI's `init.model` fails the role. Reports distinguish the requested model from the CLI-reported one; neither is independent proof of which remote weights served a request. Antigravity may also use background models for coordination.
 
-Selections are rechecked with fresh discovery at launch. A mismatch between the requested model and the CLI's `init.model` fails that role. The report distinguishes the requested model from the CLI-reported one. Neither is independent proof of which remote weights served a request. Antigravity may also use background models for coordination.
-
-No separate `effort` field is accepted: the exact model variant is pinned, avoiding an extra effort flag that could reinterpret it. See [model-selection.md](plugins/antigravity-council/skills/antigravity-council/references/model-selection.md).
+No separate `effort` field is accepted: agy encodes reasoning effort in its variant IDs, so the exact variant is the effort choice. See [model-selection.md](plugins/antigravity-council/skills/antigravity-council/references/model-selection.md).
 
 ## Authority and safety
 
@@ -126,7 +135,7 @@ Global `--skill-contract 1` belongs **before** the subcommand. `ANTIGRAVITY_COUN
 
 ## CLI versus Python SDK
 
-This plugin uses the native authenticated Antigravity **CLI protocol**. It does not instantiate `google.antigravity.Agent`. Google's Python SDK authentication path and its local-model API are separate from the account-backed CLI model catalog. The implementation does not assume an undocumented SDK route to the account's Opus allocation. See [SDK-NOTES.md](docs/SDK-NOTES.md).
+This plugin uses the native authenticated Antigravity **CLI protocol**. It does not instantiate `google.antigravity.Agent`. Google's Python SDK authentication path and its local-model API are separate from the account-backed CLI model catalog. The implementation does not assume an undocumented SDK route to the account's CLI model allocation. See [SDK-NOTES.md](docs/SDK-NOTES.md).
 
 ## Development and verification
 
@@ -139,8 +148,8 @@ python3 -m unittest discover -s tests -v
 The tests create private temporary homes and scripted `agy` doubles, never consume model quota, and never modify your real settings. To exercise real model access and capability selection deliberately:
 
 ```zsh
-python3 scripts/live_smoke.py --allow-billable --model gemini-4-argon-high
-python3 scripts/live_smoke.py --allow-billable --model claude-opus-5-5-high
+python3 scripts/live_smoke.py --allow-billable                         # agy's default model
+python3 scripts/live_smoke.py --allow-billable --model <id-from-agy-models>
 ```
 
 Live smoke tests use a scratch workspace and one read-only prompt, retain diagnostic run directories, and do not certify production safety. Their model IDs still have to appear in your current local catalog.

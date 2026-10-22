@@ -1,13 +1,13 @@
 # Source contract ledger
 
-Reviewed against official public documentation on **October 20, 2026**. URLs are live and may change after that date. The implementation refuses missing capabilities rather than claiming compatibility with every historic CLI version.
+Reviewed against official public documentation on **October 22, 2026**, with the installed `agy` 1.4.4 `--help` and `agy changelog`. Differences between the two are listed in [RECONCILIATION.md](RECONCILIATION.md). URLs are live and may change after that date. The implementation refuses missing capabilities rather than claiming compatibility with every historic CLI version.
 
 | Source | Contract used |
 |---|---|
 | [CLI headless mode](https://antigravity.google/docs/cli/headless/) | Streaming stdin user messages, `event` envelopes, explicit conversation resume, model/agent pins, terminal states, cumulative counters, native response timeout |
 | [CLI execution modes](https://antigravity.google/docs/cli/modes/) | `--mode accept-edits`; plan mode is not treated as a security boundary |
-| [Available models](https://antigravity.google/docs/models/) | Argon and Opus 5.5 availability depends on product/account; local metadata and inference are distinct checks |
-| [Enterprise model configuration](https://antigravity.google/docs/enterprise/) | Opus 5.5 variant identifiers and effort choices; background coordination models can differ from the requested reasoning model |
+| [Available models](https://antigravity.google/docs/models/) | Availability depends on product/plan and changes often; local metadata and inference are distinct checks |
+| [Enterprise model configuration](https://antigravity.google/docs/enterprise/) | Variant identifiers encode effort choices; background coordination models can differ from the requested reasoning model |
 | [Reasoning effort](https://antigravity.google/docs/cli/commands/effort/) | Effort is model-dependent; this adapter pins discovered variant IDs without a second overriding effort field |
 | [Custom agents](https://antigravity.google/docs/subagents/) | Global Markdown profiles, explicit tool lists, main-agent selection, shell policy, and optional extensions |
 | [Terminal sandbox](https://antigravity.google/docs/sandbox/) | `--sandbox` requests session-level terminal isolation; it is not a Python-enforced security boundary |
@@ -17,7 +17,9 @@ Reviewed against official public documentation on **October 20, 2026**. URLs are
 | [SDK policies](https://antigravity.google/docs/sdk/policies/) | SDK policy functions are not passed to or advertised as CLI flags |
 | [SDK lifecycle](https://antigravity.google/docs/sdk/lifecycle/) | Separate SDK session contract; not transplanted into the CLI adapter |
 | [Claude plugin manifest](https://code.claude.com/docs/en/plugins/manifest-reference) | Plugin manifest, conventional component directories, plugin-relative scripts |
-| [Claude marketplace creation](https://code.claude.com/docs/en/plugins/create-marketplace) | Local marketplace registration and plugin installation |
+| [Claude marketplace creation](https://code.claude.com/docs/en/plugins/create-marketplace) | GitHub marketplace registration, plugin installation, version-pinned updates |
+| [Claude skills](https://code.claude.com/docs/en/skills) | Turn-scoped `allowed-tools` pre-approval of the runner command |
+| [Claude dynamic workflows](https://code.claude.com/docs/en/workflows) | Plugin `workflows/` distribution, `meta` literal, `agent`/`pipeline`/`phase`, `args` |
 
 Architecture references: [Codex Council](https://github.com/ehzawad/codex-council) and [Cursor Cult](https://github.com/ehzawad/cursor-cult). Their source was inspected through the connected GitHub account. The new plugin uses its own runtime modules and Antigravity protocol implementation; it does not assume the original projects' vendor flags transfer.
 

@@ -28,11 +28,11 @@ def tree_signature(root: Path) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--allow-billable', action='store_true', help='authorize one actual agent prompt using account quota')
-    p.add_argument('--model', required=True, help='exact model ID, validated against agy models')
+    p.add_argument('--model', help="exact ID from `agy models`; omit to use agy's own configured default")
     ns = p.parse_args()
     if not ns.allow_billable:
         p.error('requires --allow-billable; no inference was started')
-    if not common.MODEL_RE.fullmatch(ns.model):
+    if ns.model is not None and not common.MODEL_RE.fullmatch(ns.model):
         p.error('model must be an exact execution ID')
     nonce = secrets.token_hex(12)
     # Keep the scratch workspace and private run for inspection on either outcome.
@@ -45,19 +45,23 @@ def main() -> int:
         policy.setup_profiles()
         run = life.prepare(str(scratch), 'smoke-' + nonce, 'smoke-' + nonce,
                            print_timeout='5m', stall_seconds=120, heartbeat_seconds=15)
-        roles = [{
+        label = ns.model or "agy's default model"
+        role = {
             'id': 'read-canary', 'label': 'Read-only capability smoke check',
             'instruction': ['Read canary.txt using view_file. Include its exact contents in your response.',
                             'Do not edit, create, or delete files, run commands, invoke subagents, or use external tools.',
                             'Report the tool actually used and any denial.'],
-            'model': ns.model, 'access': 'read',
-            'selection_reason': 'Explicit operator-requested model for a one-prompt live smoke test.'
-        }]
+            'access': 'read',
+            'selection_reason': 'Operator-requested model (or agy default) for a one-prompt live smoke test.'
+        }
+        if ns.model:
+            role['model'] = ns.model
+        roles = [role]
         values = {
-            'Verbatim request': f'Read canary.txt with {ns.model} and report its contents without changing files.',
+            'Verbatim request': f'Read canary.txt with {label} and report its contents without changing files.',
             'Authorized outcome': 'One read-only live model check, using operator-authorized account quota.',
             'Hard constraints and non-goals': 'No writes, shell, external actions, or subagents. No task outside the canary.',
-            'Explicit lenses or panel requests': ns.model,
+            'Explicit lenses or panel requests': label,
             'Authority boundaries': 'Only local read/search tools in the capability profile. No mutations.',
             'Acceptance evidence': 'Usable final response contains the canary; runtime model/tools match; workspace contents unchanged.'
         }

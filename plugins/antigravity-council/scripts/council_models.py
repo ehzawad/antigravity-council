@@ -11,11 +11,8 @@ from council_common import CouncilError, MODEL_RE, digest, now, read_json, write
 
 REQUIRED_FLAGS = {"--input-format", "--output-format", "--model", "--agent", "--add-dir", "--conversation", "--print-timeout"}
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-# Preferences, not a fabricated catalog: membership in agy models is mandatory.
-PREFERENCES = {
-    "argon": ("gemini-4-argon-high", "gemini-4-argon-medium"),
-    "opus-5.5": ("claude-opus-5-5-high", "claude-opus-5-5-medium", "claude-opus-5-5-max", "claude-opus-5-5-low"),
-}
+# No built-in model names or preferences: catalogs change frequently, so the host
+# chooses from the live `agy models` snapshot at runtime.
 
 
 def cli_binary() -> str:
@@ -98,17 +95,15 @@ def discover(root: Path) -> dict:
         raise CouncilError("installed agy help does not advertise required flags: " + ", ".join(missing))
     text = probe([binary, "models"], root)
     models = parse_models(text)
-    ids = {m["id"] for m in models}
     return {"schema": 1, "created_at": now(), "binary": binary, "version": version,
             "flags": sorted(flags), "models": models, "raw_models": text, "auth": route,
-            "preferred": {k: [s for s in v if s in ids] for k, v in PREFERENCES.items()},
             "snapshot_id": digest(text + version + str(root))[:20]}
 
 
 def validate_models(roles: list[dict], snapshot: dict) -> None:
     ids = {m["id"] for m in snapshot["models"]}
     for role in roles:
-        if role["model"] not in ids:
+        if "model" in role and role["model"] not in ids:
             raise CouncilError(f"{role['id']}: requested model {role['model']!r} not advertised by agy models; "
                                "refresh discovery, preserve the user's pin, and report the gap")
 

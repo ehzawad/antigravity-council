@@ -1,7 +1,7 @@
 # Intent Capsule
 
 ## Verbatim request
-Example only: Investigate the reported concurrency defect with Argon and Opus. Do not edit.
+Example only: Investigate the reported concurrency defect with two independent workers, one on the model I pinned and one on agy's default. Do not edit.
 
 ## Authorized outcome
 Return a diagnosis grounded in the actual source and observed evidence.
@@ -10,7 +10,7 @@ Return a diagnosis grounded in the actual source and observed evidence.
 Preserve all current files and uncommitted changes. No implementation or command execution.
 
 ## Explicit lenses or panel requests
-One independent Argon invariant check and one Opus state-transition check.
+One independent invariant check on the user-pinned model and one state-transition check on agy's default model.
 
 ## Authority boundaries
 Read-only source inspection. No writes, shell, commits, remote actions, deployment, or publishing.

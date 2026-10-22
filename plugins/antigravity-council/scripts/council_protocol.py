@@ -62,7 +62,9 @@ class Stream:
                 raise CouncilError("init payload missing")
             self.init = init
             self.conversation_id = event.get("conversation_id")
-            if init.get("model") != self.role["model"]:
+            # init.model is reported only when overridden, so a role that
+            # inherits agy's default has nothing to compare against.
+            if "model" in self.role and init.get("model") != self.role["model"]:
                 raise CouncilError(f"init model {init.get('model')!r} differs from pin {self.role['model']!r}")
             expected_agent = profile_name(self.role["access"])
             if init.get("agent") != expected_agent:

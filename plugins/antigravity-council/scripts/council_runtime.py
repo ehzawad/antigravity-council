@@ -43,8 +43,10 @@ INTERNAL_RUN_FILES = {"launch.json", "launch-plan.json", "model-snapshot.json", 
 
 def argv_for(binary: str, role: dict, config: dict, sid: str | None, run_dir: Path | None = None) -> list[str]:
     args = [binary, "--input-format", "stream-json", "--output-format", "stream-json",
-            "--model", role["model"], "--agent", profile_name(role["access"]),
+            "--agent", profile_name(role["access"]),
             "--print-timeout", config["print_timeout"]]
+    if "model" in role:
+        args += ["--model", role["model"]]
     if run_dir is not None:
         args += ["--add-dir", str(run_dir)]
     # Do not use -p with --input-format stream-json. Prompts belong on stdin.
@@ -140,7 +142,8 @@ async def terminate(proc: asyncio.subprocess.Process) -> None:
     this function an OS containment boundary or an exactly-once guarantee.
     """
     for sig in (signal.SIGTERM, signal.SIGKILL):
-        with contextlib.suppress(ProcessLookupError):
+        # macOS reports EPERM, not ESRCH, for a group whose leader just exited.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(proc.pid, sig)
         if sig == signal.SIGTERM:
             await asyncio.sleep(0.25)
@@ -257,7 +260,7 @@ async def run_attempt(binary: str, role: dict, context: str, config: dict, sid: 
                 task.cancel()
         await asyncio.gather(*helpers, return_exceptions=True)
         # Sweep an inherited process group even after normal CLI exit.
-        with contextlib.suppress(ProcessLookupError):
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(proc.pid, signal.SIGTERM)
         with contextlib.suppress(Exception):
             update(role["id"], process=None, publish=False)
@@ -267,7 +270,7 @@ def session_path(config: dict, role: dict) -> Path:
     # Model and capability changes start fresh so independent cross-model checks
     # never silently inherit another model's answer or a writer's tool history.
     key = json.dumps([config["cwd"], config["session_key"], config["task_key"],
-                      role["id"], role["model"], profile_name(role["access"])])
+                      role["id"], role.get("model"), profile_name(role["access"])])
     directory = private_dir(state_root() / "sessions", create=True)
     return directory / (digest(key) + ".json")
 
@@ -302,7 +305,8 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
                 stream = attempt.stream
                 if attempt.warning:
                     warnings.append(attempt.warning)
-                # Never automatically replay writers or an attempt that used tools.
+                # Never automatically replay writers or an attempt that used tools,
+                # with one documented exception below for read-only permission aborts.
                 retry_safe = role["access"] == "read" and not stream.unsafe_to_replay
                 if count < 2 and retry_safe and sid and attempt.failure_class == "stale-session":
                     sid = None
@@ -314,11 +318,15 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
                     update(role["id"], phase="retry-wait")
                     await asyncio.sleep(2)
                     continue
-                # If a read-only worker wandered into an outside/forbidden path and
-                # headless jetski killed the turn with an empty terminal response,
-                # retry once fresh with an explicit path-denial note.
+                # Exception: a read-only worker that wandered outside the granted
+                # directories gets its turn killed by headless mode with an empty
+                # response. Its profile has only read/search tools, so replaying it
+                # cannot repeat a side effect even though tool steps were observed.
+                # Retry once fresh with an explicit path-denial note.
                 if (count < 2 and role["access"] == "read" and attempt.failure_class == "permission"
                         and attempt.error == "empty terminal response"):
+                    if sid:
+                        warnings.append("permission retry started a fresh conversation; prior continuity lost")
                     sid = None
                     retry_note = "; ".join(stream.tool_errors) or "outside-workspace read_file auto-denied"
                     warnings.append("headless permission abort on read role; retried once with explicit path boundary")
@@ -331,7 +339,7 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
                 warnings.append("resume returned a different conversation; continuity lost")
             if succeeded and isinstance(new_id, str) and SESSION_RE.fullmatch(new_id):
                 try:
-                    write_json(spath, {"conversation_id": new_id, "updated_at": now(), "model": role["model"]})
+                    write_json(spath, {"conversation_id": new_id, "updated_at": now(), "model": role.get("model")})
                 except OSError as exc:
                     warnings.append(f"reply retained, but session save failed: {exc}")
             if attempt.stream.tool_errors:
@@ -339,7 +347,7 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
             if re.search(r"(?:soft.denied|permission.{0,40}denied|requires approval)", attempt.stderr, re.I):
                 warnings.append("permission denial in stderr; a clean terminal result does not verify the blocked check")
             return {"role_id": role["id"], "label": role["label"], "ok": succeeded,
-                    "requested_model": role["model"], "reported_model": (attempt.stream.init or {}).get("model"),
+                    "requested_model": role.get("model"), "reported_model": (attempt.stream.init or {}).get("model"),
                     "access": role["access"], "profile": profile_name(role["access"]),
                     "selection_reason": role["selection_reason"],
                     "conversation_id": new_id, "attempts": count,
@@ -357,7 +365,7 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
 def render_role(result: dict) -> str:
     title = str(result["label"]).replace("\n", " ")
     sections = [f"## {title} ({result['role_id']})", "",
-                f"Status: {'ok' if result['ok'] else 'failed'}; model sent: `{result['requested_model']}`; "
+                f"Status: {'ok' if result['ok'] else 'failed'}; model sent: `{result['requested_model'] or 'agy default (not pinned)'}`; "
                 f"access: `{result['access']}`.", ""]
     if result.get("error"):
         sections += [f"Failure class: `{result.get('failure_class', 'runtime')}`", "", result["error"], ""]
@@ -376,10 +384,10 @@ async def fleet(binary: str, roles: list[dict], context: str, config: dict,
         try:
             result = await execute_role(binary, role, context, config, run_dir, semaphore, update)
         except asyncio.CancelledError:
-            result = {"role_id": role["id"], "label": role["label"], "requested_model": role["model"],
+            result = {"role_id": role["id"], "label": role["label"], "requested_model": role.get("model"),
                       "access": role["access"], "ok": False, "error": "cancelled", "failure_class": "cancelled", "response": ""}
         except Exception as exc:
-            result = {"role_id": role["id"], "label": role["label"], "requested_model": role["model"],
+            result = {"role_id": role["id"], "label": role["label"], "requested_model": role.get("model"),
                       "access": role["access"], "ok": False, "error": f"{type(exc).__name__}: {exc}",
                       "failure_class": "runtime", "response": ""}
         # A reply is durable before its completion event is published.

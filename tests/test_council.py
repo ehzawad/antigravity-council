@@ -32,7 +32,7 @@ def context(phase="Inspect current evidence."):
     return "# Intent Capsule\n\n" + "\n\n".join(f"## {h}\nValue for {h}." for h in common.HEADINGS) + "\n\n# Current Phase Brief\n" + phase + "\n"
 
 
-def role(rid="independent-check", model="gemini-4-argon-high", access="read", instruction=None):
+def role(rid="independent-check", model="model-alpha-high", access="read", instruction=None):
     return {"id": rid, "label": "Independent check", "instruction": instruction or ["Inspect the stated claim.", "Report nothing material when justified."],
             "model": model, "access": access, "selection_reason": "User-requested model; task-specific evidence check."}
 
@@ -211,7 +211,7 @@ class InputTests(Isolated):
     def test_session_scopes_model_access_and_task(self):
         cfg = life.config_for(self.prepare())
         first = runtime.session_path(cfg, role())
-        self.assertNotEqual(first, runtime.session_path(cfg, role(model="claude-opus-5-5-high")))
+        self.assertNotEqual(first, runtime.session_path(cfg, role(model="model-beta-high")))
         self.assertNotEqual(first, runtime.session_path(cfg, role(access="write")))
         self.assertNotEqual(first, runtime.session_path(dict(cfg, task_key="other"), role()))
 
@@ -223,7 +223,7 @@ class InputTests(Isolated):
     def test_argv_has_no_print_prompt(self):
         cfg = life.config_for(self.prepare())
         argv = runtime.argv_for("agy", role(), cfg, None)
-        self.assertNotIn("-p", argv)
+        self.assertFalse({"-p", "--print", "--prompt"} & set(argv))
         self.assertNotIn("--effort", argv)
         self.assertNotIn("--dangerously-skip-permissions", argv)
 
@@ -245,11 +245,11 @@ class InputTests(Isolated):
 
 class ModelTests(Isolated):
     def test_documented_table(self):
-        parsed = models.parse_models("gemini-4-argon-high   Gemini 4 Argon (High)\nclaude-opus-5-5-high   Claude Opus 5.5 (High)")
+        parsed = models.parse_models("model-alpha-high   Model Alpha (High)\nmodel-beta-high   Model Beta (High)")
         self.assertEqual(len(parsed), 2)
 
     def test_ansi_table(self):
-        self.assertEqual(models.parse_models("\x1b[32mgemini-4-argon-high\x1b[0m  Gemini 4 Argon")[0]["id"], "gemini-4-argon-high")
+        self.assertEqual(models.parse_models("\x1b[32mmodel-alpha-high\x1b[0m  Model Alpha")[0]["id"], "model-alpha-high")
 
     def test_conflicting_catalog(self):
         with self.assertRaises(common.CouncilError): models.parse_models("model-a  A\nmodel-a  B")
@@ -261,7 +261,8 @@ class ModelTests(Isolated):
         record = self.base / "calls.jsonl"
         with patch.dict(os.environ, {"FAKE_AGY_RECORD": str(record)}):
             snap = models.discover(self.project)
-        self.assertIn("gemini-4-argon-high", snap["preferred"]["argon"])
+        self.assertIn("model-alpha-high", {m["id"] for m in snap["models"]})
+        self.assertNotIn("preferred", snap)
         self.assertFalse(snap["auth"]["entitlement_verified"])
         calls = [json.loads(s) for s in record.read_text().splitlines()]
         self.assertEqual([c["args"] for c in calls], [["--version"], ["--help"], ["models"]])
@@ -271,7 +272,7 @@ class ModelTests(Isolated):
 
     def test_unknown_pin_not_substituted(self):
         snap = models.discover(self.project)
-        with self.assertRaises(common.CouncilError): models.validate_models([role(model="argon-guessed")], snap)
+        with self.assertRaises(common.CouncilError): models.validate_models([role(model="alpha-guessed")], snap)
 
 
 class ProtocolTests(unittest.TestCase):
@@ -361,11 +362,11 @@ class IntegrationTests(Isolated):
         self.assertTrue(result["results"][0]["ok"])
 
     def test_detached_multi_model_council(self):
-        run = self.prepare([role("one"), role("two", model="claude-opus-5-5-high")])
+        run = self.prepare([role("one"), role("two", model="model-beta-high")])
         out = self.cli("start", run); self.assertEqual(out.returncode, 0, out.stderr)
         self.wait(run)
         results = life.collect(run)["results"]
-        self.assertEqual({r["requested_model"] for r in results}, {"gemini-4-argon-high", "claude-opus-5-5-high"})
+        self.assertEqual({r["requested_model"] for r in results}, {"model-alpha-high", "model-beta-high"})
 
     def test_partial_results_survive_failure(self):
         run = self.prepare([role("one"), role("two", instruction=["[fake:fail]"])])
@@ -385,7 +386,7 @@ class IntegrationTests(Isolated):
         sid = life.collect(first)["results"][0]["conversation_id"]
         second = self.prepare(); self.assertEqual(self.cli("run", second).returncode, 0)
         self.assertEqual(life.collect(second)["results"][0]["conversation_id"], sid)
-        third = self.prepare([role(model="claude-opus-5-5-high")]); self.assertEqual(self.cli("run", third).returncode, 0)
+        third = self.prepare([role(model="model-beta-high")]); self.assertEqual(self.cli("run", third).returncode, 0)
         self.assertNotEqual(life.collect(third)["results"][0]["conversation_id"], sid)
 
     def test_stale_resume_read_retries_fresh_once(self):
@@ -503,7 +504,10 @@ class IntegrationTests(Isolated):
         while time.monotonic() < deadline:
             view = life.observe(run)
             worker = view.get("state", {}).get("roles", {}).get("independent-check", {}).get("process")
-            if worker: break
+            # Wait for the worker's first output too: killed before it writes,
+            # the fake legitimately exits on EPIPE and there is nothing to reap.
+            log = run / "logs" / "independent-check.1.stdout.ndjson"
+            if worker and log.exists() and log.stat().st_size: break
             time.sleep(0.05)
         self.assertIsNotNone(worker)
         os.kill(view["supervisor"]["pid"], signal.SIGKILL)
@@ -532,6 +536,48 @@ class IntegrationTests(Isolated):
         before = settings.read_bytes()
         run = self.prepare(); self.cli("run", run)
         self.assertEqual(settings.read_bytes(), before)
+
+
+class NativeDefaultModelTests(Isolated):
+    """A role may omit model to inherit agy's configured default; no model list is built in."""
+
+    def unpinned(self, rid="native-default"):
+        r = role(rid)
+        del r["model"]
+        return r
+
+    def test_omitted_model_parses_and_placeholders_refused(self):
+        self.assertNotIn("model", common.parse_roles([self.unpinned()])[0])
+        for placeholder in ("inherit", "Default"):
+            with self.subTest(placeholder=placeholder), self.assertRaises(common.CouncilError):
+                common.parse_roles([role(model=placeholder)])
+
+    def test_omitted_model_sends_no_model_flag(self):
+        run = self.prepare([self.unpinned()])
+        argv = runtime.argv_for("agy", self.unpinned(), life.config_for(run), None)
+        self.assertNotIn("--model", argv)
+        self.assertIn("--agent", argv)
+
+    def test_init_without_model_accepted_only_when_unpinned(self):
+        r = self.unpinned()
+        init = init_event(role())
+        del init["init"]["model"]
+        s = protocol.Stream(r); feed(s, init, result_event()); self.assertEqual(s.outcome(0), (True, ""))
+        with self.assertRaises(common.CouncilError):
+            feed(protocol.Stream(role()), init)
+
+    def test_unpinned_role_runs_end_to_end_and_reports_no_pin(self):
+        run = self.prepare([self.unpinned()])
+        self.assertEqual(self.cli("run", run).returncode, 0)
+        result = life.collect(run)["results"][0]
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["requested_model"])
+        self.assertIn("agy default", (run / "replies" / "native-default.md").read_text())
+
+    def test_unpinned_session_is_isolated_from_pinned(self):
+        cfg = life.config_for(self.prepare())
+        self.assertNotEqual(runtime.session_path(cfg, self.unpinned("independent-check")),
+                            runtime.session_path(cfg, role()))
 
 
 if __name__ == "__main__":

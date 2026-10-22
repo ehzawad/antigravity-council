@@ -32,11 +32,11 @@ if args == ["models"]:
     if os.environ.get("FAKE_AGY_MODELS_BAD"):
         print("No parseable catalog here.")
     else:
-        print("gemini-4-argon-high    Gemini 4 Argon (High)")
-        print("gemini-4-argon-medium  Gemini 4 Argon (Medium)")
-        print("claude-opus-5-5-high   Claude Opus 5.5 (High)")
-        print("claude-opus-5-5-medium Claude Opus 5.5 (Medium)")
-        print("claude-opus-5-5-max    Claude Opus 5.5 (Max)")
+        print("model-alpha-high    Model Alpha (High)")
+        print("model-alpha-medium  Model Alpha (Medium)")
+        print("model-beta-high   Model Beta (High)")
+        print("model-beta-medium Model Beta (Medium)")
+        print("model-beta-max    Model Beta (Max)")
     raise SystemExit(0)
 
 
@@ -48,7 +48,7 @@ def emit(value):
     print(json.dumps(value, ensure_ascii=False), flush=True)
 
 
-if "-p" in args or arg("--input-format") != "stream-json" or arg("--output-format") != "stream-json":
+if {"-p", "--print", "--prompt"} & set(args) or arg("--input-format") != "stream-json" or arg("--output-format") != "stream-json":
     print("wrong streaming invocation", file=sys.stderr)
     raise SystemExit(2)
 message = json.loads(sys.stdin.readline())
@@ -93,7 +93,9 @@ if scenario == "bad-init-tools":
     registry.remove("view_file")
 if scenario != "no-init":
     emit({"event": "init", "conversation_id": sid,
-          "init": {"model": model, "agent": agent, "tools": registry, "permission_mode": "request-review"}})
+          # Like real agy, init.model is present only when --model overrides it.
+          "init": dict({"agent": agent, "tools": registry, "permission_mode": "request-review"},
+                       **({"model": model} if model else {}))})
 if scenario == "sleep":
     if os.environ.get("FAKE_AGY_CHILD"):
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(90)"])

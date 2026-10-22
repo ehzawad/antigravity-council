@@ -28,7 +28,7 @@ For attached execution replace `start`/`follow` with `run`. A writer must be sel
 
 Use `cancel "$RUN"` for deliberate cancellation. If it cannot stop a verified live supervisor, review its diagnostics before `cancel "$RUN" --force`. After a SIGKILLed supervisor, `status` can show `aborted`; `reap "$RUN"` attempts to terminate verified recorded worker groups. Do not reap an active or uncertain run. Collect partial evidence with `collect "$RUN" --partial`.
 
-When the model catalog changes, rerun discovery before authoring a new directory. When quota or a model pin fails during execution, preserve its identity and report the gap. Never replace Opus with Argon, Argon with Flash, or an explicit high setting with a lower variant without user direction.
+When the model catalog changes, rerun discovery before authoring a new directory. When quota or a model pin fails during execution, preserve its identity and report the gap. Never replace one model family with another, or an explicit higher variant with a lower one, without user direction.
 
 Headless command denial is not necessarily a failed whole run. Inspect role warnings and raw stderr. For required tests, configure a scoped operator command allow rule or obtain appropriate explicit execution authorization; never claim the tests ran merely because the agent answered.
 

@@ -1,6 +1,6 @@
 # Why this release uses native `agy`
 
-The requested model pool is the account-backed Antigravity CLI, including third-party Opus. The official Python SDK describes `google-antigravity`, `Agent`/`LocalAgentConfig`, Gemini API-key initialization, Vertex routing, policies, and local model adapters. Those are not evidence that an SDK `Agent` call consumes the same logged-in CLI allocation or exposes Opus under the same identifier.
+The requested model pool is the account-backed Antigravity CLI, including third-party models it advertises. The official Python SDK describes `google-antigravity`, `Agent`/`LocalAgentConfig`, Gemini API-key initialization, Vertex routing, policies, and local model adapters. Those are not evidence that an SDK `Agent` call consumes the same logged-in CLI allocation or exposes third-party models under the same identifiers.
 
 Consequently, this release does **not** claim to be a Python-SDK backend. It follows the documented programmatic CLI route: an authenticated `agy` child, a text user event on stdin, and the native NDJSON result protocol. It uses documented Markdown custom agents as capability profiles. It neither scrapes tokens nor copies browser/keyring credentials into council state.
 

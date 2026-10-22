@@ -91,7 +91,7 @@ class ReleaseTests(Isolated):
         self.assertTrue(life.collect(run)['results'][0]['warnings'])
 
     def test_live_smoke_refuses_implicit_spending(self):
-        result=subprocess.run([sys.executable,str(ROOT/'scripts/live_smoke.py'),'--model','gemini-4-argon-high'],
+        result=subprocess.run([sys.executable,str(ROOT/'scripts/live_smoke.py'),'--model','model-alpha-high'],
                               capture_output=True,text=True)
         self.assertEqual(result.returncode,2)
         self.assertIn('allow-billable',result.stderr)
@@ -99,7 +99,7 @@ class ReleaseTests(Isolated):
     def test_live_smoke_harness_with_offline_double(self):
         with patch.dict(os.environ,{'FAKE_AGY_SCENARIO':'canary'}):
             result=subprocess.run([sys.executable,str(ROOT/'scripts/live_smoke.py'),'--allow-billable',
-                                   '--model','gemini-4-argon-high'],capture_output=True,text=True,timeout=20)
+                                   '--model','model-alpha-high'],capture_output=True,text=True,timeout=20)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('"passed": true',result.stdout)
         # Scratch retention is intended for live use. This test removes only its
