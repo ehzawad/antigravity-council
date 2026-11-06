@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Host-driven Antigravity CLI councils for Claude Code",
-    "version": "0.2.2"
+    "version": "0.2.3"
   },
   "plugins": [
     {
