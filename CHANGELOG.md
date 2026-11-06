@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 (2026-11-06)
+
+- Fix: a tool name missing from agy's registry no longer kills the role. A model called `read_file`, which agy doesn't have; it can only be rejected by the executor, so the attempt is recorded in `tool_errors` and the turn goes on. A registered tool outside the profile, or a tool step with no name, still stops the role.
+
 ## 0.2.1 (2026-10-22)
 
 - One command: `/antigravity-council:antigravity-council`. The separate `/antigravity-council:council` dynamic workflow is removed, and its independent claim-verification step is now part of the skill's reconcile phase.

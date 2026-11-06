@@ -93,7 +93,12 @@ class Stream:
             if st == "tool":
                 name = step.get("tool_name")
                 if name not in TOOLS[self.role["access"]] | INFRA_TOOLS:
-                    raise CouncilError(f"worker attempted tool outside profile: {name!r}")
+                    # A registered tool outside the profile is a capability breach. A name
+                    # the registry lacks is a model slip the executor can only reject, so
+                    # the turn goes on with the attempt on record.
+                    if not isinstance(name, str) or name in self.init["tools"]:
+                        raise CouncilError(f"worker attempted tool outside profile: {name!r}")
+                    self.tool_errors.append(json.dumps({"unregistered_tool": name}, ensure_ascii=True))
                 info = step.get("tool_info")
                 if isinstance(info, dict) and info.get("error"):
                     self.tool_errors.append(json.dumps(info["error"], ensure_ascii=True))
