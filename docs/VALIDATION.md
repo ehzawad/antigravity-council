@@ -1,6 +1,6 @@
-# Release validation: 0.2.2
+# Release validation: 0.2.3
 
-0.2.2 changes one rule in the stream audit (a tool name missing from agy's registry is recorded, not fatal), checked offline with the unit tests and `verify.py` on November 6, 2026 against agy 1.5.2's reported registry; no live council ran for it. The record below is 0.2.1's.
+0.2.3 maps agy 1.5.2's `read_file` step name to `view_file` in the stream audit, checked offline with the unit tests and `verify.py` on November 6, 2026; agy 1.5.2 was observed reporting `read_file` in live stream-json output. The record below is 0.2.1's.
 
 Executed on **October 22, 2026** (0.2.0 live runs; 0.2.1 only removes the separate workflow command and folds its claim-verification step into the skill, re-checked offline and with a live installed-copy run) on macOS (Darwin 27.0) with Python 3.15, `agy` 1.4.4, and Claude Code 2.1.307.
 

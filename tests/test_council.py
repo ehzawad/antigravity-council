@@ -333,18 +333,22 @@ class ProtocolTests(unittest.TestCase):
 
     def test_step_tool_outside_profile_refused(self):
         step = {"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "run_command", "state": "DONE"}}
-        registry = sorted(policy.TOOLS["read"] | {"run_command"})
-        with self.assertRaises(common.CouncilError): feed(protocol.Stream(role()), init_event(tools=registry), step)
+        with self.assertRaises(common.CouncilError): feed(protocol.Stream(role()), init_event(), step)
 
     def test_step_tool_without_a_name_refused(self):
         step = {"event": "step_update", "step_update": {"step_type": "tool", "state": "DONE"}}
         with self.assertRaises(common.CouncilError): feed(protocol.Stream(role()), init_event(), step)
 
-    def test_step_tool_missing_from_registry_is_recorded_and_the_turn_goes_on(self):
-        # A model called read_file, which agy doesn't have, and the whole role was killed.
+    def test_step_tool_absent_from_the_registry_still_refused(self):
+        # init.tools doesn't list everything agy can run, so absence proves nothing.
+        step = {"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "delete_file", "state": "ACTIVE"}}
+        with self.assertRaises(common.CouncilError): feed(protocol.Stream(role()), init_event(), step)
+
+    def test_read_file_step_is_view_file(self):
+        # agy 1.5.2's step name for a read; the role was killed for it.
         step = {"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "read_file", "state": "ACTIVE"}}
         s = protocol.Stream(role()); feed(s, init_event(), step, result_event())
-        self.assertEqual(s.tool_errors, ['{"unregistered_tool": "read_file"}'])
+        self.assertEqual(s.tool_errors, [])
         self.assertIsNotNone(s.result)
 
     def test_duplicate_terminal_refused(self):

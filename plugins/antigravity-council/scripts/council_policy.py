@@ -14,6 +14,10 @@ WRITE_TOOLS = READ_TOOLS | {"write_to_file", "replace_file_content", "multi_repl
 TOOLS = {"read": READ_TOOLS, "write": WRITE_TOOLS, "execute": WRITE_TOOLS | {"run_command"}}
 # These infrastructure tools do not add a file/command/browser/MCP execution surface.
 INFRA_TOOLS = {"ask_permission", "notify_user"}
+# agy 1.5.2 runs a file read as `read_file` in its step events though its registry and
+# profiles still name the tool `view_file`. Each entry is observed, never a guess: an
+# unknown step name stays a breach, because init.tools doesn't list everything that runs.
+STEP_TOOL_NAMES = {"read_file": "view_file"}
 
 
 def profile_content(access: str) -> str:

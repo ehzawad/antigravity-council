@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.2.2 (2026-11-06)
+## 0.2.3 (2026-11-06)
 
-- Fix: a tool name missing from agy's registry no longer kills the role. A model called `read_file`, which agy doesn't have; it can only be rejected by the executor, so the attempt is recorded in `tool_errors` and the turn goes on. A registered tool outside the profile, or a tool step with no name, still stops the role.
+- Fix: agy 1.5.2 reports a file read as `read_file` in its step events while its registry and profiles still say `view_file`, and the stream audit killed the role. `read_file` now counts as `view_file`.
+- Reverts 0.2.2's rule, which recorded any tool name missing from `init.tools` and let the turn go on. That rested on a wrong diagnosis: `init.tools` doesn't list everything agy can run, so a missing name proves nothing. Every other name outside the profile stops the role again.
 
 ## 0.2.1 (2026-10-22)
 
