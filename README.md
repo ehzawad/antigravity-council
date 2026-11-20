@@ -33,15 +33,15 @@ claude plugin update antigravity-council@antigravity-council
 Start a new Claude Code session after installing or updating. Then install the worker profiles once, and again after any update that changes a profile (a changed profile gets a new name; upgrading from 0.2.x adds the full-access profile):
 
 ```zsh
-python3 "$(ls -d ~/.claude/plugins/cache/antigravity-council/antigravity-council/*/ | sort -V | tail -1)scripts/antigravity_council.py" setup
+python3 "$(ls -d ~/.claude/plugins/cache/antigravity-council/antigravity-council/*/ | grep -E '/[0-9]+(\.[0-9]+)+/$' | sort -V | tail -1)scripts/antigravity_council.py" setup
 ```
 
-The command picks the newest cached version, so it still works when an update leaves two versions in the cache. `setup` installs four deterministic, content-hash-named profiles in `~/.gemini/config/agents/`: the default full-access profile and the three restricted opt-ins (`read`, `write`, `execute`). It is idempotent. It never changes Antigravity settings, browser credentials, API keys, or your project's files. Existing conflicting profiles are refused, not overwritten. These profiles describe **tool access**, not a permanent committee of personas. Preflight fails with a pointer to `setup` when a needed profile is missing, and the skill runs `setup` in that case.
+The command picks the newest numbered version in the cache, so it still works when an update leaves two versions there or Claude Code keeps non-version folders beside them. `setup` installs four deterministic, content-hash-named profiles in `~/.gemini/config/agents/`: the default full-access profile and the three restricted opt-ins (`read`, `write`, `execute`). It is idempotent. It never changes Antigravity settings, browser credentials, API keys, or your project's files. Existing conflicting profiles are refused, not overwritten. These profiles describe **tool access**, not a permanent committee of personas. Preflight fails with a pointer to `setup` when a needed profile is missing, and the skill runs `setup` in that case.
 
 Run metadata-only discovery from your actual project (no inference, no quota):
 
 ```zsh
-python3 "$(ls -d ~/.claude/plugins/cache/antigravity-council/antigravity-council/*/ | sort -V | tail -1)scripts/antigravity_council.py" doctor --cwd "$PWD"
+python3 "$(ls -d ~/.claude/plugins/cache/antigravity-council/antigravity-council/*/ | grep -E '/[0-9]+(\.[0-9]+)+/$' | sort -V | tail -1)scripts/antigravity_council.py" doctor --cwd "$PWD"
 ```
 
 To develop from a checkout instead, use `claude --plugin-dir ./plugins/antigravity-council` and validate with `claude plugin validate ./plugins/antigravity-council`.
