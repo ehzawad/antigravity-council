@@ -42,6 +42,45 @@ FULL_PERMISSION_MODE = "always-proceed"
 # A restricted executor's commands run in agy's terminal sandbox without prompting. With
 # the default request-review, headless agy denied every command (observed live on 1.5.12).
 EXECUTE_SETTINGS = {"toolPermission": "proceed-in-sandbox"}
+
+
+def skill_dirs() -> list[Path]:
+    """Where agy loads global and plugin skills from (official skills and plugins pages)."""
+    home = Path.home()
+    return [home / ".gemini/config/plugins", home / ".gemini/config/skills",
+            home / ".gemini/antigravity-cli/skills", home / ".gemini/skills"]
+
+
+def restricted_settings(access: str, unrestricted_shell: bool, project_skills: list[Path] = ()) -> dict:
+    """Session-only settings for a restricted role.
+
+    agy has no switch that removes skills from a worker (profile lists, --disable-slash-commands
+    and pluginsDisabled were tried on 1.5.12). A worker loads a skill by reading its SKILL.md,
+    so deny rules on the skill folders stop it from using them; deny rules apply in every
+    permission mode. Whether --settings permissions replace or merge with settings.json is not
+    documented, so the user's own global rules are carried along and never dropped.
+    """
+    rules: dict[str, list[str]] = {"allow": [], "ask": [], "deny": []}
+    path = Path.home() / ".gemini/antigravity-cli/settings.json"
+    if path.exists():
+        import json as _json
+        try:
+            user = _json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            # Fail closed: a session rule set without the user's own rules might drop them.
+            raise CouncilError(f"cannot read {path} to carry your permission rules into restricted roles: {exc}")
+        perms = user.get("permissions") if isinstance(user, dict) else None
+        if isinstance(perms, dict):
+            for key in rules:
+                value = perms.get(key)
+                rules[key] = [r for r in value if isinstance(r, str)] if isinstance(value, list) else []
+    for path in [*skill_dirs(), *project_skills]:  # global, plugin, and project skill folders
+        if f"read_file({path})" not in rules["deny"]:
+            rules["deny"].append(f"read_file({path})")
+    settings: dict = {"permissions": {k: v for k, v in rules.items() if v}}
+    if access == "execute" and not unrestricted_shell:
+        settings.update(EXECUTE_SETTINGS)
+    return settings
 # These infrastructure tools do not add a file/command/browser/MCP execution surface.
 INFRA_TOOLS = {"ask_permission", "notify_user"}
 # agy 1.5.x exposes profile tools to the model under new names and reports those names

@@ -16,7 +16,7 @@ from typing import Callable
 from council_common import (CouncilError, SESSION_RE, digest, now, open_lock, private_dir,
                             read_json, state_root, write_json)
 from council_models import provider_check
-from council_policy import EXECUTE_SETTINGS, FULL_SETTINGS, check_profiles, profile_name
+from council_policy import FULL_SETTINGS, check_profiles, profile_name, restricted_settings
 from council_protocol import Stream, classify, user_message
 
 
@@ -43,7 +43,8 @@ def seconds(duration: str) -> int:
 
 INTERNAL_RUN_FILES = {"launch.json", "launch-plan.json", "model-snapshot.json", "supervisor.lock",
                       "supervisor.json", "state.json", "events.ndjson", "err.log", "report.json",
-                      "report.md", "supervisor-error.txt", "logs", "replies"}
+                      "report.md", "supervisor-error.txt", "logs", "replies",
+                      "workspace.json", "private.git", "diffs.json"}
 
 
 def turns_for(role: dict, config: dict) -> int:
@@ -86,8 +87,21 @@ def argv_for(binary: str, role: dict, config: dict, sid: str | None, run_dir: Pa
         args += ["--sandbox"]
         if config.get("unrestricted_shell"):
             args += ["--dangerously-skip-permissions"]
-        else:
-            args += ["--settings", json.dumps(EXECUTE_SETTINGS, separators=(",", ":"), sort_keys=True)]
+    # Restricted roles: deny rules on the skill folders (and, for a sandboxed executor,
+    # proceed-in-sandbox) as session-only settings.
+    from council_workspace import cwd_for
+    places = {Path(config["cwd"]), Path(cwd_for(config.get("workspace_record"), role) or config["cwd"])}
+    project_skills = [p / sub for p in sorted(places) for sub in (".agents/skills", ".agent/skills")]
+    settings = json.dumps(restricted_settings(role["access"], bool(config.get("unrestricted_shell")), project_skills),
+                          separators=(",", ":"), sort_keys=True)
+    if run_dir is not None:
+        # A private file keeps the user's own permission rules off the process command line
+        # (agy 1.5.12 accepts a --settings file path; verified live).
+        path = run_dir / f"settings-{role['id']}.json"
+        from council_common import atomic_write
+        atomic_write(path, settings)
+        settings = str(path)
+    args += ["--settings", settings]
     return args
 
 
@@ -114,20 +128,23 @@ what remains unverified, risks, and unknowns."""
 def staged_files(run_dir: Path | None) -> list[str]:
     if run_dir is None or not run_dir.is_dir():
         return []
-    return sorted(p.name for p in run_dir.iterdir() if p.name not in INTERNAL_RUN_FILES)
+    return sorted(p.name for p in run_dir.iterdir()
+                  if p.name not in INTERNAL_RUN_FILES and not p.name.startswith("settings-"))
 
 
 def prompt_for(role: dict, context: str, *, cwd: Path | None = None,
-               run_dir: Path | None = None, retry_note: str = "") -> str:
+               run_dir: Path | None = None, retry_note: str = "", source: Path | None = None,
+               mode: str = "shared") -> str:
     access = {
         "full": ("Full access: you may read and edit any file, run any command, and use the network and web "
                  "search without approval prompts. Other workers in this council may edit the same worktree "
                  "concurrently; re-read files before editing and keep changes scoped to your deliverable."),
-        "read": "Read-only investigation. No file writes, shell execution, browser actuation, or MCP calls.",
+        "read": ("Read-only investigation. No file writes, shell execution, browser actuation, MCP calls, or "
+                 "skills (skill files are blocked for this role)."),
         "write": ("You are the only restricted file writer in this council; full-access workers, if any, may also "
-                  "edit files. Shell execution is unavailable."),
+                  "edit files. Shell execution and skills are unavailable."),
         "execute": ("You are the only restricted writer/executor in this council; full-access workers, if any, may "
-                    "also edit files. Use only the granted workspace and tool permissions."),
+                    "also edit files. Use only the granted workspace and tool permissions; skills are unavailable."),
     }[role["access"]]
     lens = "\n".join(role["instruction"])
     harness = ("Use your full agy harness (subagents, workflows, your MCP servers) as the task needs, but do not "
@@ -158,6 +175,18 @@ def prompt_for(role: dict, context: str, *, cwd: Path | None = None,
             f"above. Never read or list paths outside those two directories (such as /tmp, /private/tmp, /var, "
             f"parent directories, or ~/.claude), because headless mode auto-denies outside paths and immediately "
             f"aborts your turn with empty output.\n"
+        )
+    if source is not None and cwd is not None and Path(source) != Path(cwd):
+        shared = mode != "per-role"
+        paths_block += (
+            f"\n{'SHARED COUNCIL WORKSPACE' if shared else 'YOUR OWN WORKSPACE'}\n"
+            f"The workspace root above is "
+            + ("this council's own working copy of the user's project, shared by every worker in the council. "
+               if shared else
+               "your own working copy of the user's project. Other workers have their own copies and cannot see "
+               "your edits; the host compares the results and lands the best. ")
+            + f"Make all changes here, and do not edit the user's tree at {source}: the host reviews the diff and "
+              f"merges it into the user's tree afterwards.\n"
         )
     if retry_note:
         paths_block += (
@@ -261,10 +290,13 @@ async def run_attempt(binary: str, role: dict, context: str, config: dict, sid: 
     if live is not None:
         live["stream"] = stream  # lets a cancelled fleet keep what this attempt already produced
     out = Attempt(stream)
-    root = Path(config["cwd"])
+    from council_workspace import cwd_for
+    root = Path(cwd_for(config.get("workspace_record"), role) or config["cwd"])
     turns = turns_for(role, config)
     # Encoding and config validation happen before spawning a child.
-    payloads = [user_message(prompt_for(role, context, cwd=root, run_dir=run_dir, retry_note=retry_note))]
+    payloads = [user_message(prompt_for(role, context, cwd=root, run_dir=run_dir, retry_note=retry_note,
+                                        source=Path(config["cwd"]),
+                                        mode=(config.get("workspace_record") or {}).get("mode", "live")))]
     if turns > 1:
         payloads.append(user_message(VERIFY_PROMPT))
     command = argv_for(binary, role, config, sid, run_dir)
