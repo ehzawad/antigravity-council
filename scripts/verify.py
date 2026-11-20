@@ -33,7 +33,8 @@ def verify() -> dict:
     skill = skills[0].read_text()
     assert skill.startswith('---\nname: antigravity-council\n')
     assert '${CLAUDE_PLUGIN_ROOT}/scripts/antigravity_council.py' in skill
-    assert '--skill-contract 1' in skill
+    assert f'--skill-contract {common.CONTRACT}' in skill
+    assert '--skill-contract 1 ' not in skill, 'stale skill contract examples'
     assert 'allowed-tools:\n  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/antigravity_council.py" *)' in skill
     assert not (PLUGIN / '.claude-plugin/skills').exists()
     assert marketplace['metadata']['version'] == common.VERSION

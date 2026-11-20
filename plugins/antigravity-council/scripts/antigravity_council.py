@@ -38,6 +38,8 @@ def parser() -> argparse.ArgumentParser:
     prep.add_argument("--writer")
     prep.add_argument("--unrestricted-shell", action="store_true")
     prep.add_argument("--no-resume", action="store_true")
+    prep.add_argument("--no-verify-turn", action="store_true",
+                      help="skip full roles' forced self-verification turn (faster, less quota)")
     for name in ("discover", "check", "start", "run", "status", "collect", "follow", "cancel", "reap"):
         cmd = sub.add_parser(name)
         cmd.add_argument("run_dir", type=Path)
@@ -75,7 +77,8 @@ def main(argv: list[str] | None = None) -> int:
             run_dir = prepare(ns.cwd, ns.session_key, ns.task_key, max_parallel=ns.max_parallel,
                               stall_seconds=ns.stall_seconds, print_timeout=ns.print_timeout,
                               heartbeat_seconds=ns.heartbeat_seconds, writer=ns.writer,
-                              unrestricted_shell=ns.unrestricted_shell, resume=not ns.no_resume)
+                              unrestricted_shell=ns.unrestricted_shell, resume=not ns.no_resume,
+                              verify_turn=not ns.no_verify_turn)
             answer = {"run_dir": str(run_dir), "roles_file": str(run_dir / "roles.json"),
                       "context_file": str(run_dir / "context.md"), "next": "discover, author inputs, check, start, follow, collect"}
         else:
