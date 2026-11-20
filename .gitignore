@@ -3,3 +3,14 @@ __pycache__/
 .venv/
 .DS_Store
 *.zip
+
+# The repository ships only what the plugin needs; maintainer tooling and notes stay local.
+/docs/
+/examples/
+/scripts/
+/tests/
+/.github/
+/DESIGN.md
+/SECURITY.md
+/AGENTS.md
+/SHA256SUMS

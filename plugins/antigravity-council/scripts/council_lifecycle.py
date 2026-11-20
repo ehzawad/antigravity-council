@@ -21,10 +21,11 @@ from council_common import (CONTRACT, VERSION, TERMINAL, CouncilError, atomic_wr
 from council_models import discover, store_discovery, validate_models
 from council_policy import check_profiles, validate_authority
 from council_runtime import acquire, fleet, render_role, seconds
+from council_workspace import MODES as WORKSPACE_MODES, create as create_workspace, effective_mode, load as load_workspace
 
 CONFIG_FIELDS = {"schema", "version", "contract", "cwd", "session_key", "task_key", "max_parallel",
                  "stall_seconds", "print_timeout", "heartbeat_seconds", "resume", "writer", "unrestricted_shell",
-                 "verify_turn"}
+                 "verify_turn", "workspace"}
 
 
 def context_template() -> str:
@@ -35,7 +36,7 @@ def context_template() -> str:
 def prepare(cwd: str, session: str | None, task: str, *, max_parallel: int = 6,
             stall_seconds: float = 1800, print_timeout: str = "60m", heartbeat_seconds: float = 300,
             writer: str | None = None, unrestricted_shell: bool = False, resume: bool = True,
-            verify_turn: bool = True) -> Path:
+            verify_turn: bool = True, workspace: str = "auto") -> Path:
     root = project_root(cwd)
     session_key = host_session(session)
     if not task.strip():
@@ -44,6 +45,8 @@ def prepare(cwd: str, session: str | None, task: str, *, max_parallel: int = 6,
     positive(stall_seconds, "stall_seconds", zero=True)
     positive(heartbeat_seconds, "heartbeat_seconds")
     seconds(print_timeout)
+    if workspace not in WORKSPACE_MODES:
+        raise CouncilError("workspace must be auto, shared, per-role, or live")
     runs = private_dir(state_root() / "runs", create=True)
     run_dir = Path(tempfile.mkdtemp(prefix="run-", dir=runs))
     config = {"schema": 1, "version": VERSION, "contract": CONTRACT, "cwd": str(root),
@@ -51,7 +54,7 @@ def prepare(cwd: str, session: str | None, task: str, *, max_parallel: int = 6,
               "max_parallel": max_parallel, "stall_seconds": stall_seconds,
               "print_timeout": print_timeout, "heartbeat_seconds": heartbeat_seconds,
               "resume": resume, "writer": writer, "unrestricted_shell": unrestricted_shell,
-              "verify_turn": verify_turn}
+              "verify_turn": verify_turn, "workspace": workspace}
     write_json(run_dir / "launch.json", config)
     write_json(run_dir / "roles.json", [])
     atomic_write(run_dir / "context.md", context_template())
@@ -79,6 +82,8 @@ def config_for(run_dir: Path) -> dict:
     for name in ("resume", "unrestricted_shell", "verify_turn"):
         if not isinstance(config[name], bool):
             raise CouncilError(f"launch.{name} must be boolean")
+    if config["workspace"] not in WORKSPACE_MODES:
+        raise CouncilError("launch.workspace must be auto, shared, per-role, or live")
     if config["writer"] is not None and not isinstance(config["writer"], str):
         raise CouncilError("writer must be null or a role ID")
     root = project_root(config["cwd"])
@@ -153,9 +158,8 @@ def check(run_dir: Path, *, refresh: bool = False) -> dict:
         raise CouncilError("installed CLI does not advertise --mode for authorized writers")
     if any(r["access"] == "execute" for r in roles) and "--sandbox" not in flags:
         raise CouncilError("execute roles require the documented --sandbox flag")
-    if (any(r["access"] == "execute" for r in roles) and not config["unrestricted_shell"]
-            and "--settings" not in flags):
-        raise CouncilError("a restricted execute role needs --settings to run sandboxed commands headless")
+    if any(r["access"] != "full" for r in roles) and "--settings" not in flags:
+        raise CouncilError("restricted roles need --settings (skill deny rules; a sandboxed executor's commands)")
     if config["unrestricted_shell"] and "--dangerously-skip-permissions" not in flags:
         raise CouncilError("CLI lacks explicit permission-bypass flag; refusing to guess")
     check_intent(config, capsule)
@@ -166,6 +170,7 @@ def check(run_dir: Path, *, refresh: bool = False) -> dict:
             "full_access_roles": [r["id"] for r in roles if r["access"] == "full"],
             "writer": config["writer"], "unrestricted_shell": config["unrestricted_shell"],
             "verify_turn": config["verify_turn"],
+            "workspace": effective_mode(config["workspace"], roles),
             "entitlement_verified": False, "snapshot_id": snapshot["snapshot_id"]}
 
 
@@ -264,6 +269,11 @@ async def supervise(run_dir: Path, fd: int, expected_hash: str, binary: str) -> 
         total = len(roles)
         if input_hash(config, roles, context) != expected_hash:
             raise CouncilError("staged inputs changed after launch validation")
+        workspace = load_workspace(run_dir)
+        if workspace is None:
+            raise CouncilError("council workspace was not created; prepare a new run")
+        # Workers run in their workspace; continuity stays keyed on the project.
+        config = dict(config, workspace_record=workspace)
         tracker = Tracker(run_dir, roles)
         tracker.event("run_started", total=total)
         heartbeat = asyncio.create_task(tracker.heartbeat(config["heartbeat_seconds"]))
@@ -326,6 +336,12 @@ def start(run_dir: Path, *, attached: bool = False) -> dict | int:
     # The launch always refreshes models and checks local capabilities, even after check.
     plan = check(run_dir, refresh=True)
     fd = claim(run_dir, plan)
+    try:
+        writers = [m["role"] for m in plan["models"] if m["access"] != "read"]
+        plan["workspace_record"] = create_workspace(run_dir, Path(config_for(run_dir)["cwd"]), plan["workspace"], writers)
+    except BaseException:
+        os.close(fd)
+        raise
     if attached:
         try:
             return asyncio.run(supervise(run_dir, fd, plan["input_hash"], plan["binary"]))
@@ -402,7 +418,16 @@ def observe(run_dir: Path) -> dict:
     else:
         life = "unknown"
     return {"lifecycle": life, "run_status": state.get("status"), "exit_code": state.get("exit_code"),
-            "lock_held": held, "identity": identity, "supervisor": record, "state": state}
+            "lock_held": held, "identity": identity, "supervisor": record, "state": state,
+            "workspace": _workspace_view(run_dir)}
+
+
+def _workspace_view(run_dir: Path):
+    # status, cancel and reap must keep working even if workspace.json is damaged.
+    try:
+        return load_workspace(run_dir)
+    except (CouncilError, OSError, ValueError) as exc:
+        return {"error": str(exc)}
 
 
 def follow(run_dir: Path, after: int = 0, timeout: float = 0) -> int:
@@ -517,3 +542,16 @@ def collect(run_dir: Path, *, partial: bool = False) -> dict:
             "settled": len(results), "total": total, "results": results,
             "complete_transport": view["lifecycle"] == "done" and len(results) == total,
             "task_verified": False}
+
+
+def settled_for_landing(run_dir: Path) -> None:
+    """diff and land need a verified end and no live worker process (an aborted run may have one)."""
+    view = observe(run_dir)
+    if view["lifecycle"] not in {"done", "aborted"}:
+        raise CouncilError("the council is still running; diff and land need a verified end")
+    from council_common import same_process
+    alive = [rid for rid, role in (view.get("state") or {}).get("roles", {}).items()
+             if isinstance(role, dict) and isinstance(role.get("process"), dict) and same_process(role["process"])]
+    if alive:
+        raise CouncilError("worker processes are still alive (" + ", ".join(alive) + "); run reap first")
+

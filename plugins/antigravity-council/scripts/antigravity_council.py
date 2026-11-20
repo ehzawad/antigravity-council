@@ -38,9 +38,12 @@ def parser() -> argparse.ArgumentParser:
     prep.add_argument("--writer")
     prep.add_argument("--unrestricted-shell", action="store_true")
     prep.add_argument("--no-resume", action="store_true")
+    prep.add_argument("--workspace", choices=("auto", "shared", "per-role", "live"), default="auto",
+                      help="auto (default): one shared worktree when any role can change files; per-role: one "
+                           "worktree per writing role; live: the user's tree")
     prep.add_argument("--no-verify-turn", action="store_true",
                       help="skip full roles' forced self-verification turn (faster, less quota)")
-    for name in ("discover", "check", "start", "run", "status", "collect", "follow", "cancel", "reap"):
+    for name in ("discover", "check", "start", "run", "status", "collect", "follow", "cancel", "reap", "diff", "land"):
         cmd = sub.add_parser(name)
         cmd.add_argument("run_dir", type=Path)
         if name == "follow":
@@ -51,6 +54,8 @@ def parser() -> argparse.ArgumentParser:
             cmd.add_argument("--partial", action="store_true")
         if name == "cancel":
             cmd.add_argument("--force", action="store_true")
+        if name in {"diff", "land"}:
+            cmd.add_argument("--role", help="the role's workspace, for per-role councils")
     internal = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     internal.add_argument("run_dir", type=Path)
     internal.add_argument("--lock-fd", required=True, type=int)
@@ -78,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                               stall_seconds=ns.stall_seconds, print_timeout=ns.print_timeout,
                               heartbeat_seconds=ns.heartbeat_seconds, writer=ns.writer,
                               unrestricted_shell=ns.unrestricted_shell, resume=not ns.no_resume,
-                              verify_turn=not ns.no_verify_turn)
+                              verify_turn=not ns.no_verify_turn, workspace=ns.workspace)
             answer = {"run_dir": str(run_dir), "roles_file": str(run_dir / "roles.json"),
                       "context_file": str(run_dir / "context.md"), "next": "discover, author inputs, check, start, follow, collect"}
         else:
@@ -105,6 +110,15 @@ def main(argv: list[str] | None = None) -> int:
                 answer = cancel(run_dir, force=ns.force)
             elif cmd == "reap":
                 answer = reap(run_dir)
+            elif cmd in {"diff", "land"}:
+                from council_lifecycle import settled_for_landing
+                from council_workspace import diff as workspace_diff, land as workspace_land, load as load_ws
+                settled_for_landing(run_dir)
+                record = load_ws(run_dir)
+                if cmd == "diff" and not ns.role and record and record["mode"] == "per-role":
+                    answer = {"units": [workspace_diff(run_dir, name) for name in record["units"]]}
+                else:
+                    answer = (workspace_diff if cmd == "diff" else workspace_land)(run_dir, ns.role)
             elif cmd == "_supervise":
                 try:
                     return asyncio.run(supervise(run_dir, ns.lock_fd, ns.input_hash, ns.binary))
