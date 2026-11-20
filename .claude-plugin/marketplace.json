@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Host-driven Antigravity CLI councils for Claude Code",
-    "version": "0.2.3"
+    "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "antigravity-council",
       "source": "./plugins/antigravity-council",
-      "description": "Dynamic independent Antigravity CLI workers on any live-catalog model, supervised and reconciled by Claude."
+      "description": "Dynamic independent full-access Antigravity CLI workers on any live-catalog model, supervised and reconciled by Claude."
     }
   ]
 }

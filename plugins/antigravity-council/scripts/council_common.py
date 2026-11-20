@@ -15,8 +15,10 @@ import subprocess
 import tempfile
 from typing import Any, Iterator
 
-VERSION = "0.2.3"
-CONTRACT = 1
+VERSION = "1.0.0"
+CONTRACT = 2
+# agy --effort values (documented as "low through max, depending on the model").
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
 TERMINAL = {"succeeded", "partial", "failed", "cancelled"}
 ID_RE = re.compile(r"[a-z][a-z0-9_-]{0,79}\Z")
 MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]*\Z")
@@ -175,7 +177,7 @@ def parse_roles(raw: Any) -> list[dict]:
     if not isinstance(raw, list) or not raw:
         raise CouncilError("roles.json must be a nonempty array; there is no fixed panel")
     roles, seen = [], set()
-    allowed = {"id", "label", "instruction", "model", "access", "selection_reason"}
+    allowed = {"id", "label", "instruction", "model", "effort", "access", "selection_reason"}
     for entry in raw:
         if not isinstance(entry, dict) or set(entry) - allowed:
             raise CouncilError("role has invalid or unknown fields")
@@ -193,6 +195,15 @@ def parse_roles(raw: Any) -> list[dict]:
                 raise CouncilError("model must be an exact safe execution slug, or omitted to inherit agy's default")
             if model.lower() in {"inherit", "default"}:
                 raise CouncilError("inherit agy's default model by omitting model, not with a placeholder")
+        # Optional user-chosen reasoning effort, sent as agy --effort. There is no default
+        # and no preference: omit it to keep the catalog variant's (or agy's) own effort.
+        if "effort" in entry and entry["effort"] not in EFFORTS:
+            raise CouncilError("effort must be one of " + ", ".join(EFFORTS) + ", or omitted")
+        # agy 1.5.12 rejects --effort next to a catalog variant ID ("--model X conflicts with
+        # --effort"); catalog IDs already encode effort, so pick that variant instead.
+        if "effort" in entry and "model" in entry:
+            raise CouncilError("effort is only for roles that omit model; select the catalog variant ID "
+                               "for that effort instead (agy rejects --model with --effort)")
         if any(c in entry["label"] + entry["selection_reason"] for c in "\r\n\x00"):
             raise CouncilError("label and selection_reason must be single-line")
         instruction = entry.get("instruction")
@@ -200,9 +211,10 @@ def parse_roles(raw: Any) -> list[dict]:
             isinstance(s, str) and s.strip() for s in instruction
         ):
             raise CouncilError("instruction must be a nonempty list of nonempty strings")
-        access = entry.get("access", "read")
-        if not isinstance(access, str) or access not in {"read", "write", "execute"}:
-            raise CouncilError("access must be read, write, or execute")
+        # Full access is the default. read/write/execute are explicit restricted opt-ins.
+        access = entry.get("access", "full")
+        if not isinstance(access, str) or access not in {"full", "read", "write", "execute"}:
+            raise CouncilError("access must be full (default), read, write, or execute")
         role = dict(entry, access=access)
         # Validate UTF-8 before any subprocess is created.
         json.dumps(role, ensure_ascii=False).encode("utf-8")

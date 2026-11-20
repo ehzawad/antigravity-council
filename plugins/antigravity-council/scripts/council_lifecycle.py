@@ -23,7 +23,8 @@ from council_policy import check_profiles, validate_authority
 from council_runtime import acquire, fleet, render_role, seconds
 
 CONFIG_FIELDS = {"schema", "version", "contract", "cwd", "session_key", "task_key", "max_parallel",
-                 "stall_seconds", "print_timeout", "heartbeat_seconds", "resume", "writer", "unrestricted_shell"}
+                 "stall_seconds", "print_timeout", "heartbeat_seconds", "resume", "writer", "unrestricted_shell",
+                 "verify_turn"}
 
 
 def context_template() -> str:
@@ -33,7 +34,8 @@ def context_template() -> str:
 
 def prepare(cwd: str, session: str | None, task: str, *, max_parallel: int = 6,
             stall_seconds: float = 1800, print_timeout: str = "60m", heartbeat_seconds: float = 300,
-            writer: str | None = None, unrestricted_shell: bool = False, resume: bool = True) -> Path:
+            writer: str | None = None, unrestricted_shell: bool = False, resume: bool = True,
+            verify_turn: bool = True) -> Path:
     root = project_root(cwd)
     session_key = host_session(session)
     if not task.strip():
@@ -48,7 +50,8 @@ def prepare(cwd: str, session: str | None, task: str, *, max_parallel: int = 6,
               "session_key": session_key, "task_key": task,
               "max_parallel": max_parallel, "stall_seconds": stall_seconds,
               "print_timeout": print_timeout, "heartbeat_seconds": heartbeat_seconds,
-              "resume": resume, "writer": writer, "unrestricted_shell": unrestricted_shell}
+              "resume": resume, "writer": writer, "unrestricted_shell": unrestricted_shell,
+              "verify_turn": verify_turn}
     write_json(run_dir / "launch.json", config)
     write_json(run_dir / "roles.json", [])
     atomic_write(run_dir / "context.md", context_template())
@@ -73,7 +76,7 @@ def config_for(run_dir: Path) -> dict:
     positive(config["stall_seconds"], "stall_seconds", zero=True)
     positive(config["heartbeat_seconds"], "heartbeat_seconds")
     seconds(config["print_timeout"])
-    for name in ("resume", "unrestricted_shell"):
+    for name in ("resume", "unrestricted_shell", "verify_turn"):
         if not isinstance(config[name], bool):
             raise CouncilError(f"launch.{name} must be boolean")
     if config["writer"] is not None and not isinstance(config["writer"], str):
@@ -140,7 +143,13 @@ def check(run_dir: Path, *, refresh: bool = False) -> dict:
         raise CouncilError("invalid discovery snapshot; run discover again")
     validate_models(roles, snapshot)
     flags = set(snapshot.get("flags", []))
-    if any(r["access"] != "read" for r in roles) and "--mode" not in flags:
+    if any(r["access"] == "full" for r in roles):
+        missing = [f for f in ("--dangerously-skip-permissions", "--mode", "--settings") if f not in flags]
+        if missing:
+            raise CouncilError("full access needs these agy flags, absent from this CLI: " + ", ".join(missing))
+    if any("effort" in r for r in roles) and "--effort" not in flags:
+        raise CouncilError("a role sets effort but this agy does not advertise --effort")
+    if any(r["access"] in {"write", "execute"} for r in roles) and "--mode" not in flags:
         raise CouncilError("installed CLI does not advertise --mode for authorized writers")
     if any(r["access"] == "execute" for r in roles) and "--sandbox" not in flags:
         raise CouncilError("execute roles require the documented --sandbox flag")
@@ -149,8 +158,11 @@ def check(run_dir: Path, *, refresh: bool = False) -> dict:
     check_intent(config, capsule)
     return {"ok": True, "version": VERSION, "run_dir": str(run_dir),
             "input_hash": input_hash(config, roles, context), "binary": snapshot["binary"],
-            "models": [{"role": r["id"], "model": r.get("model"), "access": r["access"]} for r in roles],
+            "models": [{"role": r["id"], "model": r.get("model"), "effort": r.get("effort"), "access": r["access"]}
+                       for r in roles],
+            "full_access_roles": [r["id"] for r in roles if r["access"] == "full"],
             "writer": config["writer"], "unrestricted_shell": config["unrestricted_shell"],
+            "verify_turn": config["verify_turn"],
             "entitlement_verified": False, "snapshot_id": snapshot["snapshot_id"]}
 
 

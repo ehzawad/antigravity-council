@@ -1,13 +1,13 @@
 [
   {
-    "id": "authorized-local-patch",
-    "label": "Authorized local patch",
+    "id": "restricted-local-patch",
+    "label": "Restricted local patch (opt-in)",
     "instruction": [
-      "Implement only the explicitly authorized local change. Preserve unrelated edits.",
-      "Do not run shell commands, commit, publish, or change remote services. Report edited paths and verification gaps."
+      "Implement only the authorized local change inside the workspace. Preserve unrelated edits.",
+      "You have file tools only: no shell, network, or web. Do not commit, publish, or change remote services. Report edited paths and verification gaps."
     ],
     "model": "exact-id-copied-from-agy-models",
     "access": "write",
-    "selection_reason": "Illustrative authorized writer; verify exact ID in discovery."
+    "selection_reason": "Restricted opt-in: the user asked for an edit-only worker without a shell; prepare with --writer restricted-local-patch and verify the exact ID in discovery."
   }
 ]

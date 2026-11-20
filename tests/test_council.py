@@ -114,7 +114,7 @@ class InputTests(Isolated):
             with self.subTest(n=n), self.assertRaises(common.CouncilError): common.strict_json(n)
 
     def test_unknown_role_field(self):
-        with self.assertRaises(common.CouncilError): common.parse_roles([dict(role(), effort="high")])
+        with self.assertRaises(common.CouncilError): common.parse_roles([dict(role(), temperature="0.2")])
 
     def test_duplicate_role_id(self):
         with self.assertRaises(common.CouncilError): common.parse_roles([role(), role()])
@@ -540,9 +540,10 @@ class IntegrationTests(Isolated):
         out = self.cli("--skill-contract", "999", "doctor")
         self.assertEqual(out.returncode, 2)
 
-    def test_permission_profiles_do_not_contain_subagents(self):
-        for access in policy.TOOLS:
+    def test_restricted_profiles_do_not_contain_subagents(self):
+        for access in ("read", "write", "execute"):
             self.assertNotIn("invoke_subagent", policy.profile_text(access))
+        for access in policy.TOOLS:
             self.assertIn("subagent: false", policy.profile_text(access))
 
     def test_settings_and_credentials_unchanged(self):
@@ -552,6 +553,431 @@ class IntegrationTests(Isolated):
         before = settings.read_bytes()
         run = self.prepare(); self.cli("run", run)
         self.assertEqual(settings.read_bytes(), before)
+
+
+def full(rid="full-worker", model="model-alpha-high", instruction=None, **extra):
+    return dict(role(rid, model=model, access="full", instruction=instruction), **extra)
+
+
+class FullAccessTests(Isolated):
+    """Full access is the default: bypass, no sandbox, edits, shell, network, web, no writer limit."""
+
+    def test_omitted_access_is_full(self):
+        r = role(); del r["access"]
+        self.assertEqual(common.parse_roles([r])[0]["access"], "full")
+
+    def test_full_profile_grants_edit_shell_and_web(self):
+        tools = policy.TOOLS["full"]
+        for name in ("view_file", "write_to_file", "replace_file_content", "multi_replace_file_content",
+                     "run_command", "command_status", "send_command_input", "manage_task",
+                     "search_web", "read_url_content"):
+            self.assertIn(name, tools)
+        text = policy.profile_text("full")
+        self.assertIn("commandExecutionPolicy: eager", text)
+        self.assertNotIn("auto-denied", text)
+        # Restricted profiles keep their exact bytes, so their hash names do not move.
+        self.assertEqual(policy.profile_name("read"), "agc-read-10bf6f2220bd")
+        self.assertEqual(policy.profile_name("execute"), "agc-execute-01334d90a963")
+
+    def test_full_argv_bypasses_permissions_and_sandbox(self):
+        cfg = life.config_for(self.prepare([full()]))
+        argv = runtime.argv_for("agy", full(), cfg, None, self.project)
+        self.assertIn("--dangerously-skip-permissions", argv)
+        self.assertNotIn("--sandbox", argv)
+        self.assertEqual(argv[argv.index("--mode") + 1], "accept-edits")
+        self.assertEqual(json.loads(argv[argv.index("--settings") + 1]), policy.FULL_SETTINGS)
+        self.assertEqual(policy.FULL_SETTINGS["enableTerminalSandbox"], False)
+        self.assertEqual(policy.FULL_SETTINGS["allowNonWorkspaceAccess"], True)
+        self.assertEqual(argv[argv.index("--agent") + 1], policy.profile_name("full"))
+        self.assertFalse({"-p", "--print", "--prompt"} & set(argv))
+        self.assertNotIn("--effort", argv)
+        # agy 1.5.12 made an added root the command cwd; full roles read anywhere instead.
+        self.assertNotIn("--add-dir", argv)
+        self.assertIn("--add-dir", runtime.argv_for("agy", role(), cfg, None, self.project))
+
+    def test_observed_step_aliases_for_restricted_roles(self):
+        w = role(access="write")
+        steps = [{"event": "step_update", "step_update": {"step_type": "tool", "tool_name": n, "state": "DONE"}}
+                 for n in ("read_file", "write_file", "edit_file")]
+        s = protocol.Stream(w); feed(s, init_event(w), *steps, result_event())
+        self.assertEqual(s.outcome(0), (True, ""))
+        r = role()
+        with self.assertRaises(common.CouncilError):
+            feed(protocol.Stream(r), init_event(r), steps[1])
+
+    def test_concurrent_setup_never_sees_a_partial_profile(self):
+        for path in policy.target_dir().glob("agc-*.md"):
+            path.unlink()
+        procs = [subprocess.Popen([sys.executable, str(CLI), "setup"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                 for _ in range(8)]
+        codes = [p.wait(timeout=30) for p in procs]
+        self.assertEqual(codes, [0] * 8, [p.stderr.read() for p in procs])
+        for access in policy.TOOLS:
+            path = policy.target_dir() / (policy.profile_name(access) + ".md")
+            self.assertEqual(path.read_text(), policy.profile_text(access))
+        self.assertEqual(sorted(p.name for p in policy.target_dir().iterdir() if p.name.startswith(".")), [])
+
+    def test_full_prompt_has_no_path_fence(self):
+        prompt = runtime.prompt_for(full(), context(), cwd=self.project, run_dir=self.base)
+        self.assertIn("Full access", prompt)
+        self.assertIn("any path on this machine", prompt)
+        self.assertNotIn("auto-denies", prompt)
+        self.assertIn("auto-denies", runtime.prompt_for(role(), context(), cwd=self.project, run_dir=self.base))
+        self.assertIn("full agy harness", prompt)
+        self.assertNotIn("Do not spawn subagents", prompt)
+        self.assertIn("Do not spawn subagents", runtime.prompt_for(role(), context(), cwd=self.project, run_dir=self.base))
+
+    def unpinned(self, **extra):
+        r = full(**extra); del r["model"]; return r
+
+    def test_effort_is_optional_and_validated(self):
+        self.assertEqual(common.parse_roles([self.unpinned(effort="xhigh")])[0]["effort"], "xhigh")
+        self.assertNotIn("effort", common.parse_roles([full()])[0])
+        for bad in ("ultra", "", "High", 3, None):
+            with self.subTest(bad=bad), self.assertRaises(common.CouncilError):
+                common.parse_roles([self.unpinned(effort=bad)])
+        # agy 1.5.12: "--model <variant> conflicts with --effort"; catalog IDs encode effort.
+        with self.assertRaisesRegex(common.CouncilError, "omit model"):
+            common.parse_roles([full(effort="high")])
+        cfg = life.config_for(self.prepare([self.unpinned(effort="max")]))
+        argv = runtime.argv_for("agy", self.unpinned(effort="max"), cfg, None)
+        self.assertEqual(argv[argv.index("--effort") + 1], "max")
+        self.assertNotIn("--model", argv)
+        self.assertNotEqual(runtime.session_path(cfg, self.unpinned(effort="max")),
+                            runtime.session_path(cfg, self.unpinned()))
+
+    def test_full_roles_have_no_writer_limit(self):
+        policy.validate_authority([full("one"), full("two"), full("three")], None)
+        # The restricted single-writer rule still applies to restricted mutators.
+        with self.assertRaises(common.CouncilError):
+            policy.validate_authority([full("one"), role("two", access="write"), role("three", access="execute")], "two")
+        policy.validate_authority([full("one"), role("two", access="write")], "two")
+        with self.assertRaises(common.CouncilError): policy.validate_authority([full("one")], "one")
+
+    def test_full_init_requires_always_proceed(self):
+        r = full()
+        feed(protocol.Stream(r), init_event(r, permission_mode="always-proceed"))
+        for mode in ("request-review", None):
+            with self.subTest(mode=mode), self.assertRaises(common.CouncilError):
+                feed(protocol.Stream(r), init_event(r, permission_mode=mode))
+
+    def test_full_step_outside_profile_is_recorded_not_fatal(self):
+        r = full()
+        steps = [{"event": "step_update", "step_update": {"step_type": "tool", "tool_name": n, "state": "DONE"}}
+                 for n in ("read_file", "run_command", "search_web", "sed_file", "sed_file")]
+        s = protocol.Stream(r); feed(s, init_event(r, permission_mode="always-proceed"), *steps, result_event())
+        self.assertEqual(s.outcome(0), (True, ""))
+        self.assertEqual(len(s.audit_warnings), 1)
+        self.assertIn("sed_file", s.audit_warnings[0])
+        nameless = {"event": "step_update", "step_update": {"step_type": "tool", "state": "DONE"}}
+        with self.assertRaises(common.CouncilError):
+            feed(protocol.Stream(r), init_event(r, permission_mode="always-proceed"), nameless)
+
+    def test_missing_full_profile_names_setup(self):
+        (policy.target_dir() / (policy.profile_name("full") + ".md")).unlink()
+        with self.assertRaisesRegex(common.CouncilError, "run `setup`"):
+            policy.check_profiles(self.project, [full()])
+
+    def test_full_role_may_use_agy_subagents(self):
+        r = full()
+        step = {"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "invoke_subagent",
+                                                        "subagent_info": {"subagents": [{}]}}}
+        s = protocol.Stream(r); feed(s, init_event(r, permission_mode="always-proceed"), step, result_event())
+        self.assertEqual(s.outcome(0), (True, ""))
+        self.assertTrue(s.unsafe_to_replay)
+        self.assertIn("subagents", " ".join(s.audit_warnings))
+        with self.assertRaises(common.CouncilError):
+            feed(protocol.Stream(role()), init_event(), step)
+
+    def test_full_profile_has_agy_harness(self):
+        for name in ("invoke_subagent", "define_subagent", "manage_subagents", "run_workflow", "schedule"):
+            self.assertIn(name, policy.TOOLS["full"])
+        text = policy.profile_text("full")
+        self.assertIn("inheritMcp: true", text)
+        self.assertNotIn("mcpServers: []", text)
+        # Names agy 1.5.12 refused in a custom agent ("not found in registry").
+        for refused in ("browser_subagent", "call_mcp_tool", "sed_file", "wait_5_seconds"):
+            self.assertNotIn(refused, policy.TOOLS["full"])
+
+    def test_two_turn_stream_accounting(self):
+        r = full(); init = init_event(r, permission_mode="always-proceed")
+        step = {"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "run_command", "state": "DONE"}}
+        # A result or step before the second prompt is sent is out of order.
+        s = protocol.Stream(r); feed(s, init, result_event(response="draft"))
+        with self.assertRaises(common.CouncilError): feed(s, step)
+        s = protocol.Stream(r); feed(s, init, result_event(response="draft"))
+        with self.assertRaises(common.CouncilError): feed(s, result_event())
+        # Both turns must succeed; the latest result is the final answer.
+        new_turn = {"event": "step_update", "step_update": {"step_type": "user_input", "state": "DONE"}}
+        s = protocol.Stream(r); feed(s, init, result_event(response="draft", num_turns=1)); s.prompts_sent = 2
+        feed(s, new_turn, step, result_event(response="final", num_turns=2))
+        self.assertEqual(s.outcome(0), (True, "")); self.assertEqual(s.result["response"], "final")
+        s = protocol.Stream(r); feed(s, init, result_event(response="draft", num_turns=1)); s.prompts_sent = 2
+        self.assertIn("turn 2", s.outcome(0)[1])
+        feed(s, new_turn, result_event(status="ERROR", response="", error="boom", num_turns=2))
+        self.assertEqual(s.outcome(1)[0], False)
+        self.assertEqual(s.outcome(0), (False, "self-verification turn: boom"))
+
+    def test_full_role_runs_forced_self_verification_turn(self):
+        record = self.home / "calls.ndjson"
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_RECORD": str(record)}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        result = life.collect(run)["results"][0]
+        self.assertTrue(result["verification_turn_completed"]); self.assertEqual(result["turns_completed"], 2)
+        self.assertTrue(result["response"].startswith("Self-verified final report (turn 2)"))
+        self.assertTrue(result["draft_response"].startswith("Verified fixture reply."))
+        turns = [json.loads(l) for l in record.read_text().splitlines() if '"turn"' in l]
+        self.assertEqual([t["turn"] for t in turns], [1, 2])
+        self.assertTrue(turns[1]["prompt_head"].startswith("SELF-VERIFICATION TURN"))
+        self.assertIn("verification turn: completed", (run / "replies" / "full-worker.md").read_text())
+        self.assertEqual(result["verification_turn"], "completed")
+        args = [json.loads(l)["args"] for l in record.read_text().splitlines() if '"args"' in l and "--input-format" in l][0]
+        # agy enforces --print-timeout per turn, so the configured value is passed unchanged.
+        self.assertEqual(args[args.index("--print-timeout") + 1], "60m")
+
+    def test_no_verify_turn_opt_out_runs_full_roles_single_turn(self):
+        record = self.home / "calls.ndjson"
+        run = self.prepare([full()], verify_turn=False)
+        self.assertFalse(life.check(run)["verify_turn"])
+        with patch.dict(os.environ, {"FAKE_AGY_RECORD": str(record)}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        turns = [json.loads(l)["turn"] for l in record.read_text().splitlines() if '"turn"' in l]
+        self.assertEqual(turns, [1])
+        result = life.collect(run)["results"][0]
+        self.assertEqual(result["verification_turn"], "off")
+        self.assertFalse(result["verification_turn_completed"]); self.assertIsNone(result["draft_response"])
+        self.assertEqual(result["warnings"], [])
+        self.assertIn("verification turn: off", (run / "replies" / "full-worker.md").read_text())
+        # The CLI flag reaches launch.json.
+        out = self.cli("prepare", "--cwd", self.project, "--session-key", "s", "--task-key", "t", "--no-verify-turn")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertFalse(common.read_json(Path(json.loads(out.stdout)["run_dir"]) / "launch.json")["verify_turn"])
+
+    def test_restricted_role_stays_single_turn(self):
+        record = self.home / "calls.ndjson"
+        run = self.prepare()
+        with patch.dict(os.environ, {"FAKE_AGY_RECORD": str(record)}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        turns = [json.loads(l)["turn"] for l in record.read_text().splitlines() if '"turn"' in l]
+        self.assertEqual(turns, [1])
+        self.assertFalse(life.collect(run)["results"][0]["verification_turn_completed"])
+
+    def test_failed_turn_one_skips_verification(self):
+        record = self.home / "calls.ndjson"
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "quota", "FAKE_AGY_RECORD": str(record)}):
+            out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        turns = [json.loads(l)["turn"] for l in record.read_text().splitlines() if '"turn"' in l]
+        self.assertEqual(turns, [1])
+        self.assertEqual(life.collect(run)["results"][0]["failure_class"], "quota")
+        self.assertEqual(life.collect(run)["results"][0]["verification_turn"], "not-run")
+
+    def test_failed_verification_keeps_draft_unverified(self):
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "verify-fail"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        result = life.collect(run)["results"][0]
+        self.assertFalse(result["ok"]); self.assertFalse(result["verification_turn_completed"])
+        self.assertEqual(result["turns_completed"], 1); self.assertEqual(result["attempts"], 1)
+        self.assertEqual(result["verification_turn"], "failed")
+        self.assertTrue(result["response"].startswith("Verified fixture reply."))
+        self.assertIn("self-verification", result["error"])
+        self.assertIn("unverified first-turn draft", " ".join(result["warnings"]))
+
+    def test_rejected_first_result_never_gets_a_verify_turn(self):
+        # Sol review P1: the audit failed on turn one, yet the verify prompt was still sent.
+        record = self.home / "calls.ndjson"
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "conv-mismatch", "FAKE_AGY_RECORD": str(record)}):
+            out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        self.assertEqual(life.collect(run)["results"][0]["failure_class"], "protocol")
+        turns = [json.loads(l)["turn"] for l in record.read_text().splitlines() if '"turn"' in l]
+        self.assertEqual(turns, [1])
+
+    def test_duplicate_result_is_not_accepted_as_verification(self):
+        # Sol review P1: a repeated turn-one result must not pass as the verification reply.
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "dup-result"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        result = life.collect(run)["results"][0]
+        self.assertFalse(result["ok"]); self.assertFalse(result["verification_turn_completed"])
+        self.assertEqual(result["failure_class"], "protocol")
+
+    def test_later_result_must_be_a_new_turn_of_the_same_conversation(self):
+        r = full(); init = init_event(r, permission_mode="always-proceed")
+        new_turn = {"event": "step_update", "step_update": {"step_type": "user_input", "state": "DONE"}}
+        def two(second, with_input=True):
+            s = protocol.Stream(r); feed(s, init, result_event(response="draft", num_turns=1)); s.prompts_sent = 2
+            feed(s, *([new_turn] if with_input else []), second)
+            return s
+        two(result_event(response="final", num_turns=2))
+        with self.assertRaisesRegex(common.CouncilError, "new user turn"):
+            two(result_event(response="final", num_turns=2), with_input=False)
+        with self.assertRaisesRegex(common.CouncilError, "num_turns"):
+            two(result_event(response="final", num_turns=1))
+        missing = result_event(response="final", num_turns=2); del missing["result"]["conversation_id"]
+        with self.assertRaisesRegex(common.CouncilError, "conversation_id"):
+            two(missing)
+
+    def test_denied_actions_from_any_turn_are_kept(self):
+        # Sol review P2: a turn-one denial vanished when the verify turn was clean.
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "denied-first"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        result = life.collect(run)["results"][0]
+        self.assertEqual(result["denied_actions"], [{"action": "command"}])
+        self.assertIn("denied actions", " ".join(result["warnings"]))
+
+    def test_cancel_kills_commands_in_their_own_process_group(self):
+        # Observed live on agy 1.5.12: a cancelled worker's shell command survived as an orphan.
+        child_file = self.home / "child.pid"
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "session-child", "FAKE_AGY_CHILD": str(child_file)}):
+            self.assertEqual(self.cli("start", run).returncode, 0)
+        deadline = time.monotonic() + 10
+        while not child_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        child = int(child_file.read_text())
+        self.assertNotEqual(os.getpgid(child), os.getpgid(os.getpid()))
+        self.assertEqual(self.cli("cancel", run).returncode, 0)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(child, signal.SIGKILL)
+            self.fail("command process group survived cancel")
+
+    def test_failed_turn_one_with_live_process_gets_no_verify_prompt(self):
+        # Review finding: the earlier test passed only because the fake exited after the error.
+        record = self.home / "calls.ndjson"
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "error-stay", "FAKE_AGY_RECORD": str(record)}):
+            out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        turns = [json.loads(l)["turn"] for l in record.read_text().splitlines() if '"turn"' in l]
+        self.assertEqual(turns, [1])
+
+    def test_completed_verification_survives_a_later_process_failure(self):
+        # Review finding: a nonzero exit after a good verify turn discarded the verified report.
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "exit1-after-verify"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        result = life.collect(run)["results"][0]
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["verification_turn_completed"])
+        self.assertTrue(result["response"].startswith("Self-verified final report (turn 2)"))
+        self.assertTrue(result["draft_response"].startswith("Verified fixture reply."))
+        self.assertIn("failed afterwards", " ".join(result["warnings"]))
+
+    def test_full_role_with_dead_saved_conversation_restarts_fresh(self):
+        # Review finding: only read roles dropped a dead pointer, so full roles failed on every rerun.
+        first = self.prepare([full()]); self.assertEqual(self.cli("run", first).returncode, 0)
+        second = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "stale"}): out = self.cli("run", second)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        result = life.collect(second)["results"][0]
+        self.assertEqual(result["attempts"], 2)
+        self.assertIn("continuity lost", " ".join(result["warnings"]))
+
+    def test_restricted_role_rejects_real_subagent_step_shape(self):
+        # agy 1.5.12 reports a running subagent as step_type "subagent" with subagent_info.
+        step = {"event": "step_update", "step_update": {"step_type": "subagent", "state": "ACTIVE",
+                                                        "tool_name": "invoke_subagent", "subagent_info": {"subagents": [{}]}}}
+        with self.assertRaises(common.CouncilError):
+            feed(protocol.Stream(role()), init_event(), step)
+        r = full(); s = protocol.Stream(r)
+        feed(s, init_event(r, permission_mode="always-proceed"), step, result_event())
+        self.assertEqual(s.outcome(0), (True, ""))
+
+    def test_stray_step_between_turns_is_refused_deterministically(self):
+        r = full(); stray = {"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "run_command"}}
+        s = protocol.Stream(r); feed(s, init_event(r, permission_mode="always-proceed"), result_event(num_turns=1))
+        s.prompts_sent = 2  # even after the next prompt is out, a non-input step may not open the turn
+        with self.assertRaisesRegex(common.CouncilError, "user_input"):
+            feed(s, stray)
+
+    def test_subagents_in_verification_are_evidence(self):
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "verify-subagent"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        result = life.collect(run)["results"][0]
+        self.assertTrue(result["verification_turn_completed"])
+        self.assertIn("subagents", " ".join(result["warnings"]))
+
+    def test_preflight_requires_full_access_flags(self):
+        for flag in ("--settings", "--dangerously-skip-permissions", "--mode"):
+            run = self.prepare([full()], task=f"flag-{flag}")
+            with self.subTest(flag=flag), patch.dict(os.environ, {"FAKE_AGY_MISSING_FLAG": flag}):
+                with self.assertRaisesRegex(common.CouncilError, "full access needs"):
+                    life.check(run, refresh=True)
+
+    def test_preflight_requires_effort_flag_only_when_used(self):
+        run = self.prepare([self.unpinned(effort="high")])
+        with patch.dict(os.environ, {"FAKE_AGY_MISSING_FLAG": "--effort"}):
+            with self.assertRaisesRegex(common.CouncilError, "--effort"):
+                life.check(run, refresh=True)
+            life.check(self.prepare([full()], task="no-effort"), refresh=True)
+
+    def test_several_full_editors_run_end_to_end(self):
+        record = self.home / "calls.ndjson"
+        run = self.prepare([full("one"), full("two", model="model-beta-high")])
+        self.assertEqual(life.check(run)["full_access_roles"], ["one", "two"])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "full-ops", "FAKE_AGY_RECORD": str(record)}):
+            out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        results = life.collect(run)["results"]
+        self.assertTrue(all(r["ok"] and r["permission_mode"] == "always-proceed" for r in results))
+        self.assertEqual({r["access"] for r in results}, {"full"})
+        self.assertIn("sed_file", " ".join(results[0]["warnings"]))
+        calls = [json.loads(line)["args"] for line in record.read_text().splitlines() if "--input-format" in line]
+        self.assertEqual(len(calls), 2)
+        for args in calls:
+            self.assertIn("--dangerously-skip-permissions", args)
+            self.assertNotIn("--sandbox", args)
+            self.assertIn("--settings", args)
+
+    def test_permission_mode_mismatch_fails_role(self):
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "admin-review"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 1)
+        result = life.collect(run)["results"][0]
+        self.assertEqual(result["failure_class"], "protocol")
+        self.assertIn("always-proceed", result["error"])
+
+    def test_denied_actions_are_coverage_warnings(self):
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "denied"}): out = self.cli("run", run)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        result = life.collect(run)["results"][0]
+        # The fixture denies an action in each of the two turns; both are kept.
+        self.assertEqual(result["denied_actions"], [{"action": "command"}, {"action": "command"}])
+        self.assertIn("denied actions", " ".join(result["warnings"]))
+
+    def test_full_role_is_never_replayed(self):
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "transient"}): self.cli("run", run)
+        self.assertEqual(life.collect(run)["results"][0]["attempts"], 1)
+
+    def test_full_fleets_share_the_workspace(self):
+        # No writer limit: full councils on one worktree are not serialized.
+        first, second = self.prepare([full()], task="a"), self.prepare([full()], task="b")
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "sleep"}):
+            self.assertEqual(self.cli("start", first).returncode, 0)
+            self.assertEqual(self.cli("start", second).returncode, 0)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            phases = [life.observe(r)["state"].get("roles", {}).get("full-worker", {}).get("phase") for r in (first, second)]
+            if phases == ["running", "running"]:
+                break
+            time.sleep(0.05)
+        self.assertEqual(phases, ["running", "running"])
 
 
 class NativeDefaultModelTests(Isolated):

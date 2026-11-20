@@ -96,17 +96,38 @@ class ReleaseTests(Isolated):
         self.assertEqual(result.returncode,2)
         self.assertIn('allow-billable',result.stderr)
 
-    def test_live_smoke_harness_with_offline_double(self):
-        with patch.dict(os.environ,{'FAKE_AGY_SCENARIO':'canary'}):
+    def smoke(self, scenario, *extra):
+        with patch.dict(os.environ,{'FAKE_AGY_SCENARIO':scenario}):
             result=subprocess.run([sys.executable,str(ROOT/'scripts/live_smoke.py'),'--allow-billable',
-                                   '--model','model-alpha-high'],capture_output=True,text=True,timeout=20)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        self.assertIn('"passed": true',result.stdout)
+                                   '--model','model-alpha-high',*extra],capture_output=True,text=True,timeout=30)
         # Scratch retention is intended for live use. This test removes only its
         # own scratch path after the script has exited.
-        first=json.loads(result.stdout.splitlines()[0])
         import shutil
-        shutil.rmtree(first['scratch_workspace'])
+        lines=(result.stdout or result.stderr).splitlines()
+        if lines:
+            with contextlib.suppress(ValueError, KeyError):
+                shutil.rmtree(json.loads(lines[0])['scratch'])
+        return result
+
+    def test_live_smoke_restricted_harness_with_offline_double(self):
+        result=self.smoke('canary','--restricted')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('"passed": true',result.stdout)
+
+    def test_live_smoke_full_harness_with_offline_double(self):
+        result=self.smoke('smoke-full')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        report=json.loads(result.stdout[result.stdout.index('{\n'):])
+        self.assertTrue(report['passed'],report)
+        self.assertEqual(set(report['checks']),{'transport_ok','canary_in_reply','permission_mode_always_proceed',
+                         'verification_turn_completed','shell_wrote_marker','file_tools_wrote_then_edited',
+                         'shell_network_200','web_search_step','url_fetched','agy_subagent_completed','no_denied_actions'})
+
+    def test_live_smoke_full_harness_fails_on_missing_evidence(self):
+        # A plain success reply with no tool evidence must not pass the full check.
+        result=self.smoke('success')
+        self.assertEqual(result.returncode,1,result.stdout+result.stderr)
+        self.assertIn('"passed": false',result.stdout)
 
     def test_unstarted_directory_is_not_final_evidence(self):
         run=self.prepare()
