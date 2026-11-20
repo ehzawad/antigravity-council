@@ -1,5 +1,5 @@
 ---
-name: agc-execute-01334d90a963
+name: agc-execute-70e52c3e3680
 description: Capability-restricted Antigravity Council worker; the host supplies its task-specific role.
 tools:
   - find_by_name
@@ -14,6 +14,7 @@ mainAgent: true
 subagent: false
 model: inherit
 commandExecutionPolicy: sandbox
+inheritMcp: false
 mcpServers: []
 skills: []
 plugins: []

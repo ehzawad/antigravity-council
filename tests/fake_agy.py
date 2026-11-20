@@ -128,7 +128,10 @@ if scenario != "no-init":
           # Documented: always-proceed under --dangerously-skip-permissions, else request-review.
           # admin-review simulates a policy that keeps review on despite the flag.
           "init": dict({"agent": agent, "tools": registry,
-                        "permission_mode": "always-proceed" if bypass and scenario != "admin-review" else "request-review"},
+                        "permission_mode": "request-review" if scenario == "admin-review" else
+                                           "always-proceed" if bypass else
+                                           (json.loads(arg("--settings")).get("toolPermission") if "--settings" in args else None)
+                                           or "request-review"},
                        **({"model": model} if model else {}))})
 if scenario == "session-child":
     # Like agy 1.5.12's run_command: the command runs in its own process group.

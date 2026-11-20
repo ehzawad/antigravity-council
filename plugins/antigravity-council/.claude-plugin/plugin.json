@@ -1,7 +1,7 @@
 {
   "name": "antigravity-council",
   "displayName": "Antigravity Council",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Claude-orchestrated Antigravity CLI (agy) councils on any model your live agy catalog advertises. Workers get full access by default (edits, shell, network, web search), with durable supervision, independent claim verification, and evidence-based reconciliation.",
   "author": {
     "name": "ehzawad"

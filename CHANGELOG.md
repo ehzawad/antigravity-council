@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1 (2026-11-20)
+
+Found by live tests of the three items 1.0.0 left unverified (run on agy 1.5.12):
+
+- Restricted profiles add `inheritMcp: false`. `mcpServers: []` alone did not keep MCP out: the 1.0.0 restricted read worker successfully called a plugin's MCP tool (the strict audit would then fail the role, but only after the call ran). With `inheritMcp: false` the tool is gone. The restricted profile names change (`agc-read-cc5e5a5b5eef`, `agc-write-91558a374436`, `agc-execute-70e52c3e3680`); run `setup` after updating. The full profile is unchanged.
+- Restricted `execute` roles can now run commands. Headless agy denied every command under the default `request-review`, so the role edited files and then failed; this was true since 0.1.0. They now get `--settings '{"toolPermission":"proceed-in-sandbox"}'` with `--sandbox`: commands run in agy's terminal sandbox without prompting (live: a command ran; an outbound request got HTTP 403 from the sandbox proxy). `--unrestricted-shell` still uses the bypass instead. Preflight requires `--settings` for this role.
+- Verified live and unchanged: four full roles editing different functions of one file at the same time all landed their fixes and the test file passed; a restricted `write` role edits through the `edit_file` alias without being killed; full workers really do inherit the user's MCP servers (a plugin MCP tool call succeeded), which is agy's default; skills were listed by workers under every profile, including ones with `skills: []`.
+
+
 ## 1.0.0 (2026-11-20)
 
 Breaking: **full access is the default.** Checked against `agy` 1.5.12, its `--help`, the official Antigravity CLI docs, and live runs (see [VALIDATION.md](docs/VALIDATION.md)).
