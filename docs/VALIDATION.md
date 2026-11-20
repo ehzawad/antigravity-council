@@ -6,7 +6,7 @@ Executed on **November 20, 2026** on macOS (Darwin 27.2.0) with Python 3.15 (off
 
 ```text
 python3 scripts/verify.py                      ok (4 profiles)
-python3 -m unittest discover -s tests          Ran 150 tests ... OK   (3.15 and 3.11)
+python3 -m unittest discover -s tests          Ran 152 tests ... OK   (3.15 and 3.11; CI: Linux 3.11-3.13, macOS)
 claude plugin validate ./plugins/antigravity-council   Validation passed
 claude plugin validate .                               Validation passed (marketplace)
 ```
@@ -54,7 +54,6 @@ The verification turn worked mechanically in every completed run, and in one it 
 - What `inheritMcp` does, and whether skills reach full workers.
 - Gemini Enterprise admin policies, user deny rules, and the system command denylist under the bypass (documented to still apply; `denied_actions` handling is tested offline only).
 - Work started with `schedule`, `run_workflow`, or `manage_task` that agy keeps outside its process tree (live runs used `schedule` only as an in-turn timer).
-- A cancel during the verification turn drops the in-memory draft; the raw stream log in `logs/` keeps it.
 - Linux live execution (offline CI covers Linux), future `agy` releases, and hostile workspaces or prompt injection. Full access is not an OS sandbox.
 
 A transport success is never verification of a user's engineering task.

@@ -903,6 +903,44 @@ class FullAccessTests(Isolated):
         with self.assertRaisesRegex(common.CouncilError, "user_input"):
             feed(s, stray)
 
+    def test_cancel_during_verification_keeps_the_draft(self):
+        run = self.prepare([full()])
+        with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "verify-hang"}):
+            self.assertEqual(self.cli("start", run).returncode, 0)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            state = common.read_json(run / "state.json") if (run / "state.json").exists() else {}
+            if state.get("roles", {}).get("full-worker", {}).get("phase") == "self-verifying":
+                break
+            time.sleep(0.05)
+        else:
+            self.fail("verification turn never started")
+        self.assertEqual(self.cli("cancel", run).returncode, 0)
+        result = life.collect(run)["results"][0]
+        self.assertEqual(result["failure_class"], "cancelled")
+        self.assertTrue(result["response"].startswith("Verified fixture reply."))
+        self.assertEqual(result["draft_response"], result["response"])
+        self.assertEqual(result["verification_turn"], "failed")
+        self.assertIn("unverified first-turn draft", " ".join(result["warnings"]))
+
+    def test_watchdog_allows_each_turn_its_own_print_timeout(self):
+        # Two 0.7 s turns under a 1 s --print-timeout: 1.4 s in total exceeds one turn's
+        # budget but not two. With the grace shrunk, a one-turn watchdog would kill this.
+        run = self.prepare([full()], print_timeout="1s")
+        logdir = common.private_dir(run / "logs", create=True)
+        cfg = life.config_for(run)
+        with patch.object(runtime, "WATCHDOG_GRACE", 0.3), \
+                patch.dict(os.environ, {"FAKE_AGY_TURN_SECONDS": "0.7"}):
+            two = asyncio.run(runtime.run_attempt(models.cli_binary(), full(), context(), cfg, None,
+                                                  logdir, 1, lambda *a, **k: None))
+            self.assertEqual(two.error, "", two.error)
+            self.assertEqual(len(two.stream.results), 2)
+            # Control: the same work as one 1.4 s turn on a single-turn role is cut off.
+            with patch.dict(os.environ, {"FAKE_AGY_TURN_SECONDS": "1.4"}):
+                one = asyncio.run(runtime.run_attempt(models.cli_binary(), role(), context(), cfg, None,
+                                                      logdir, 2, lambda *a, **k: None))
+        self.assertEqual(one.failure_class, "timeout")
+
     def test_subagents_in_verification_are_evidence(self):
         run = self.prepare([full()])
         with patch.dict(os.environ, {"FAKE_AGY_SCENARIO": "verify-subagent"}): out = self.cli("run", run)

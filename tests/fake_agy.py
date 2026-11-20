@@ -214,6 +214,9 @@ if scenario == "smoke-full":
     terminal(response=f"canary: {canary}; HTTP_STATUS=200")
 elif scenario == "canary":
     terminal(response=Path("canary.txt").read_text())
+elif os.environ.get("FAKE_AGY_TURN_SECONDS"):
+    time.sleep(float(os.environ["FAKE_AGY_TURN_SECONDS"]))
+    terminal(response=f"Verified fixture reply. prompt_bytes={len(prompt.encode())}")
 elif scenario == "large":
     terminal(response="é" * 100000)
 elif scenario == "empty":
@@ -250,6 +253,10 @@ for line in sys.stdin:
         emit({"event": "step_update", "step_update": {"conversation_id": sid, "step_type": "tool", "state": "DONE",
                                                       "tool_name": "invoke_subagent",
                                                       "subagent_info": {"subagents": [{"role": "refuter"}]}}})
+    if scenario == "verify-hang":
+        time.sleep(90)  # a slow verification turn, for cancel-during-verification tests
+    if os.environ.get("FAKE_AGY_TURN_SECONDS"):
+        time.sleep(float(os.environ["FAKE_AGY_TURN_SECONDS"]))
     terminal(response=f"Self-verified final report (turn {turn}). Draft: {responses[0] if responses else ''}")
     if scenario == "exit1-after-verify":
         raise SystemExit(1)

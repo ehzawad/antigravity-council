@@ -30,6 +30,10 @@ class Attempt:
         self.warning: str | None = None
 
 
+# Process-watchdog slack beyond turns x --print-timeout, for CLI startup and exit.
+WATCHDOG_GRACE = 5.0
+
+
 def seconds(duration: str) -> int:
     match = re.fullmatch(r"([1-9][0-9]*)([smh])", duration)
     if not match:
@@ -250,8 +254,10 @@ async def terminate(proc: asyncio.subprocess.Process) -> None:
 
 async def run_attempt(binary: str, role: dict, context: str, config: dict, sid: str | None,
                       log_dir: Path, attempt_number: int, update: Callable,
-                      run_dir: Path | None = None, retry_note: str = "") -> Attempt:
+                      run_dir: Path | None = None, retry_note: str = "", live: dict | None = None) -> Attempt:
     stream = Stream(role)
+    if live is not None:
+        live["stream"] = stream  # lets a cancelled fleet keep what this attempt already produced
     out = Attempt(stream)
     root = Path(config["cwd"])
     turns = turns_for(role, config)
@@ -345,7 +351,7 @@ async def run_attempt(binary: str, role: dict, context: str, config: dict, sid: 
                 out.failure_class, out.error = "stall", f"no stdout/stderr bytes for {config['stall_seconds']} seconds"
                 await terminate(proc)
                 break
-            if time.monotonic() - started >= seconds(config["print_timeout"]) * turns + 5:
+            if time.monotonic() - started >= seconds(config["print_timeout"]) * turns + WATCHDOG_GRACE:
                 out.failure_class, out.error = "timeout", "response timeout exceeded (including CLI exit grace)"
                 await terminate(proc)
                 break
@@ -404,7 +410,8 @@ def session_path(config: dict, role: dict) -> Path:
 
 
 async def execute_role(binary: str, role: dict, context: str, config: dict,
-                       run_dir: Path, semaphore: asyncio.Semaphore, update: Callable) -> dict:
+                       run_dir: Path, semaphore: asyncio.Semaphore, update: Callable,
+                       live: dict | None = None) -> dict:
     started = time.monotonic()
     spath = session_path(config, role)
     # Acquire continuity before the fan-out permit: lock waiters don't occupy a slot.
@@ -429,7 +436,7 @@ async def execute_role(binary: str, role: dict, context: str, config: dict,
             while True:
                 count += 1
                 attempt = await run_attempt(binary, role, context, config, sid, run_dir / "logs",
-                                            count, update, run_dir=run_dir, retry_note=retry_note)
+                                            count, update, run_dir=run_dir, retry_note=retry_note, live=live)
                 stream = attempt.stream
                 if attempt.warning:
                     warnings.append(attempt.warning)
@@ -551,11 +558,22 @@ async def fleet(binary: str, roles: list[dict], context: str, config: dict,
     tasks = []
 
     async def one(role: dict) -> dict:
+        live: dict = {}
         try:
-            result = await execute_role(binary, role, context, config, run_dir, semaphore, update)
+            result = await execute_role(binary, role, context, config, run_dir, semaphore, update, live)
         except asyncio.CancelledError:
             result = {"role_id": role["id"], "label": role["label"], "requested_model": role.get("model"),
                       "access": role["access"], "ok": False, "error": "cancelled", "failure_class": "cancelled", "response": ""}
+            # Keep a finished turn-one draft when the cancel lands during the verification turn.
+            stream = live.get("stream")
+            first = stream.results[0] if stream is not None and stream.results else None
+            if (first and first.get("status") == "SUCCESS" and not first.get("error")
+                    and str(first.get("response") or "").strip()):
+                result.update(response=first["response"], draft_response=first["response"],
+                              verification_turn="failed" if turns_for(role, config) > 1 else None,
+                              verification_turn_completed=False, turns_completed=1,
+                              conversation_id=stream.conversation_id,
+                              warnings=["cancelled after turn one; the response is the unverified first-turn draft"])
         except Exception as exc:
             result = {"role_id": role["id"], "label": role["label"], "requested_model": role.get("model"),
                       "access": role["access"], "ok": False, "error": f"{type(exc).__name__}: {exc}",
