@@ -4,13 +4,7 @@ __pycache__/
 .DS_Store
 *.zip
 
-# The repository ships only what the plugin needs; maintainer tooling and notes stay local.
-/docs/
-/examples/
+# The repository ships only what the plugin needs; the maintainer's tests and tooling stay local.
 /scripts/
 /tests/
-/.github/
-/DESIGN.md
-/SECURITY.md
 /AGENTS.md
-/SHA256SUMS
