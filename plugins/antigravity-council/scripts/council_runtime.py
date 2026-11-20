@@ -16,7 +16,7 @@ from typing import Callable
 from council_common import (CouncilError, SESSION_RE, digest, now, open_lock, private_dir,
                             read_json, state_root, write_json)
 from council_models import provider_check
-from council_policy import FULL_SETTINGS, check_profiles, profile_name
+from council_policy import EXECUTE_SETTINGS, FULL_SETTINGS, check_profiles, profile_name
 from council_protocol import Stream, classify, user_message
 
 
@@ -86,6 +86,8 @@ def argv_for(binary: str, role: dict, config: dict, sid: str | None, run_dir: Pa
         args += ["--sandbox"]
         if config.get("unrestricted_shell"):
             args += ["--dangerously-skip-permissions"]
+        else:
+            args += ["--settings", json.dumps(EXECUTE_SETTINGS, separators=(",", ":"), sort_keys=True)]
     return args
 
 

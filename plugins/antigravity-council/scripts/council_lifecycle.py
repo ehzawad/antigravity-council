@@ -153,6 +153,9 @@ def check(run_dir: Path, *, refresh: bool = False) -> dict:
         raise CouncilError("installed CLI does not advertise --mode for authorized writers")
     if any(r["access"] == "execute" for r in roles) and "--sandbox" not in flags:
         raise CouncilError("execute roles require the documented --sandbox flag")
+    if (any(r["access"] == "execute" for r in roles) and not config["unrestricted_shell"]
+            and "--settings" not in flags):
+        raise CouncilError("a restricted execute role needs --settings to run sandboxed commands headless")
     if config["unrestricted_shell"] and "--dangerously-skip-permissions" not in flags:
         raise CouncilError("CLI lacks explicit permission-bypass flag; refusing to guess")
     check_intent(config, capsule)

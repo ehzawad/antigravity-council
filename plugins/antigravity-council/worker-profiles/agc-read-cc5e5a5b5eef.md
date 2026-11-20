@@ -1,5 +1,5 @@
 ---
-name: agc-read-10bf6f2220bd
+name: agc-read-cc5e5a5b5eef
 description: Capability-restricted Antigravity Council worker; the host supplies its task-specific role.
 tools:
   - find_by_name
@@ -10,6 +10,7 @@ mainAgent: true
 subagent: false
 model: inherit
 commandExecutionPolicy: off
+inheritMcp: false
 mcpServers: []
 skills: []
 plugins: []

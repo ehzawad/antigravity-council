@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from typing import Any, Iterator
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 CONTRACT = 2
 # agy --effort values (documented as "low through max, depending on the model").
 EFFORTS = ("low", "medium", "high", "xhigh", "max")

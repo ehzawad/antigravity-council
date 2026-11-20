@@ -233,6 +233,27 @@ class InputTests(Isolated):
         self.assertIn("--sandbox", argv)
         self.assertNotIn("--dangerously-skip-permissions", argv)
 
+    def test_restricted_profiles_switch_off_inherited_mcp(self):
+        # Observed live on agy 1.5.12: mcpServers: [] alone still offered a plugin MCP tool.
+        for access in ("read", "write", "execute"):
+            self.assertIn("inheritMcp: false", policy.profile_text(access))
+        self.assertIn("inheritMcp: true", policy.profile_text("full"))
+
+    def test_restricted_executor_runs_sandboxed_commands_headless(self):
+        # Observed live: request-review denied every command; proceed-in-sandbox ran them in the sandbox.
+        cfg = life.config_for(self.prepare([role(access="execute")], writer="independent-check"))
+        argv = runtime.argv_for("agy", role(access="execute"), cfg, None)
+        self.assertEqual(json.loads(argv[argv.index("--settings") + 1]), {"toolPermission": "proceed-in-sandbox"})
+        self.assertIn("--sandbox", argv)
+        cfg = life.config_for(self.prepare([role(access="execute")], writer="independent-check",
+                                           unrestricted_shell=True, task="unrestricted"))
+        argv = runtime.argv_for("agy", role(access="execute"), cfg, None)
+        self.assertNotIn("--settings", argv); self.assertIn("--dangerously-skip-permissions", argv)
+        run = self.prepare([role(access="execute")], writer="independent-check", task="no-settings")
+        with patch.dict(os.environ, {"FAKE_AGY_MISSING_FLAG": "--settings"}):
+            with self.assertRaisesRegex(common.CouncilError, "sandboxed commands"):
+                life.check(run, refresh=True)
+
     def test_changed_provider_refused(self):
         path = self.home / ".gemini/antigravity-cli"
         path.mkdir()
@@ -575,9 +596,9 @@ class FullAccessTests(Isolated):
         text = policy.profile_text("full")
         self.assertIn("commandExecutionPolicy: eager", text)
         self.assertNotIn("auto-denied", text)
-        # Restricted profiles keep their exact bytes, so their hash names do not move.
-        self.assertEqual(policy.profile_name("read"), "agc-read-10bf6f2220bd")
-        self.assertEqual(policy.profile_name("execute"), "agc-execute-01334d90a963")
+        # 1.0.1 pins the restricted names after adding inheritMcp: false; a content change must be deliberate.
+        self.assertEqual(policy.profile_name("read"), "agc-read-cc5e5a5b5eef")
+        self.assertEqual(policy.profile_name("execute"), "agc-execute-70e52c3e3680")
 
     def test_full_argv_bypasses_permissions_and_sandbox(self):
         cfg = life.config_for(self.prepare([full()]))

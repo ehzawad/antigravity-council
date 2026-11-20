@@ -1,4 +1,6 @@
-# Release validation: 1.0.0
+# Release validation: 1.0.0 and 1.0.1
+
+1.0.1 adds the live checks in the last table below; everything else is the 1.0.0 record.
 
 Executed on **November 20, 2026** on macOS (Darwin 27.2.0) with Python 3.15 (offline suite also on 3.11), `agy` 1.5.12, and Claude Code 2.1.328. 1.0.0 makes full access the default, gives full workers agy's harness, and adds a verification turn; the restricted profiles are unchanged.
 
@@ -27,7 +29,8 @@ The fake `agy` mirrors the 1.5.12 behavior observed below: the flags the runner 
 | `--effort` beside a catalog variant ID fails: "--model … conflicts with --effort=high"; without `--model` it is accepted, but `init` does not show whether it applied | live probes |
 | With the run directory added via `--add-dir`, commands ran there instead of the project | live smoke; fixed by giving full roles no `--add-dir` (next runs wrote their marker without `cd`) |
 | agy starts each shell command in its own process group | cancelled worker's command survived as an orphan before the fix; none after |
-| Plugin MCP tools and custom agents are visible to full workers, also under a profile with `mcpServers: []` and no `inheritMcp` | model-reported tool lists; the field's effect is unproven, skills unchecked |
+| MCP: a full worker, and a profile with no `inheritMcp` key, successfully called a plugin MCP tool; `inheritMcp: false` removed it; `mcpServers: []` alone did not (the 1.0.0 restricted read profile called it) | tool calls in stream logs |
+| Skills were listed by workers under every profile, including `skills: []` | model self-report |
 
 ## Live checks (billable, explicitly authorized)
 
@@ -48,10 +51,8 @@ The verification turn worked mechanically in every completed run, and in one it 
 ## Not verified
 
 - Whether the verification turn improves answers (needs a task hard enough that drafts are wrong, and quota to finish the turns).
-- Several full roles editing the same files at once against the live CLI (live runs had three concurrent full roles, read-only).
-- Restricted `write` and `execute` roles against the live CLI.
+- Several full roles editing the same lines at once (1.0.1 verified different functions of one file).
 - Resuming a saved conversation (`--conversation`) with full access across runs.
-- What `inheritMcp` does, and whether skills reach full workers.
 - Gemini Enterprise admin policies, user deny rules, and the system command denylist under the bypass (documented to still apply; `denied_actions` handling is tested offline only).
 - Work started with `schedule`, `run_workflow`, or `manage_task` that agy keeps outside its process tree (live runs used `schedule` only as an in-turn timer).
 - Linux live execution (offline CI covers Linux), future `agy` releases, and hostile workspaces or prompt injection. Full access is not an OS sandbox.
@@ -69,3 +70,15 @@ python3 scripts/live_smoke.py --allow-billable --restricted                     
 ```
 
 `--effort <level>` applies only without `--model`. The full check verifies each capability from the stream log and the filesystem, not from the model's prose. Both modes keep their private diagnostic run and scratch directory.
+
+## 1.0.1 live checks (gemini-3.8-flash-low, the only model with quota at the time)
+
+| Check | Result |
+|---|---|
+| Four full roles fix four functions of one file at the same time (verification turns on) | all four fixes landed through `edit_file`, the full test file passed, all verification turns completed |
+| Restricted `write` role | fixed the bug through `edit_file`; not killed |
+| Restricted `execute` role, 1.0.0 argv | edit landed, every command denied (`denied_actions: command/Bash`), role failed |
+| Restricted `execute` role, 1.0.1 argv (`proceed-in-sandbox`) | edit landed and the test ran; no denials. Raw probe: `permission_mode: proceed-in-sandbox`, outbound HTTP got 403 from the sandbox proxy |
+| Restricted `execute --unrestricted-shell` | edit landed and the test ran |
+| Restricted read profile, 1.0.0 vs 1.0.1, asked to call a plugin MCP tool | 1.0.0: the call succeeded; 1.0.1: no such tool |
+
